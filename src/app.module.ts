@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MulterModule } from '@nestjs/platform-express';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RouteModule } from './route/route.module';
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { MongooseModule } from '@nestjs/mongoose';
     MulterModule.register({
       dest: process.env.FILE_STORAGE,
     }),
+    RouteModule,
   ],
   controllers: [AppController],
   providers: [AppService],
