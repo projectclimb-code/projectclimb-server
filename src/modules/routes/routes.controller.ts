@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -17,5 +18,10 @@ export class RoutesController {
   @UseInterceptors(FileInterceptor('file'))
   uploadFile(@UploadedFile() file: CreateRouteDto, @Body() body) {
     this.routesService.create({ ...file, ...body });
+  }
+
+  @Get()
+  findAll() {
+    return this.routesService.findAll();
   }
 }
