@@ -30,6 +30,9 @@ export class Route {
   description: string;
 
   @Prop()
+  author: string;
+
+  @Prop()
   difficulty: string;
 
   @Prop()
@@ -40,6 +43,12 @@ export class Route {
 
   @Prop()
   zoom: number;
+
+  @Prop()
+  createdAt: Date;
+
+  @Prop()
+  updatedAt: Date;
 }
 
 export const RouteSchema = SchemaFactory.createForClass(Route);

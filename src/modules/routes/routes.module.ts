@@ -4,12 +4,14 @@ import { RoutesService } from './routes.service';
 import { Route, RouteSchema } from '../../schemas/route.schema';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MulterModule } from '@nestjs/platform-express';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot(),
     MongooseModule.forFeature([{ name: Route.name, schema: RouteSchema }]),
     MulterModule.register({
-      dest: '../upload',
+      dest: process.env.FILE_STORAGE,
     }),
   ],
   controllers: [RoutesController],
