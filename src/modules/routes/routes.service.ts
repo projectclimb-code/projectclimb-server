@@ -32,7 +32,7 @@ export class RoutesService {
         routeInDb[key] = route[key];
       }
     }
-    console.log(routeInDb);
+    routeInDb.updatedAt = new Date();
     return routeInDb.save();
   }
 
@@ -41,11 +41,10 @@ export class RoutesService {
     if (route) {
       fs.unlink(route.path, (error) => {
         if (error) throw new Error('Could not delete file');
-        console.log(`Deleted ${route.path}`);
       });
       return route.deleteOne();
     } else {
-      return 'Route doesnt exists';
+      return 'Could not find route';
     }
   }
 }
