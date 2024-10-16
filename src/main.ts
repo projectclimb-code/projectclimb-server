@@ -7,6 +7,7 @@ async function bootstrap() {
   console.log('Files locatiom: \t', process.env.FILE_STORAGE);
 
   const app = await NestFactory.create(AppModule);
+  app.enableCors();
   await app.listen(process.env.PORT);
 }
 bootstrap();
