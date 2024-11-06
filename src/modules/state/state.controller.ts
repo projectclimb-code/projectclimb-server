@@ -1,10 +1,13 @@
-import { Body, Controller, Get, Put } from '@nestjs/common';
+import { Body, Controller, Get, Put, SerializeOptions } from '@nestjs/common';
 import { StateService } from './state.service';
 
 @Controller('state')
 export class StateController {
   constructor(private readonly stateService: StateService) {}
 
+  @SerializeOptions({
+    excludePrefixes: ['_'],
+  })
   @Get()
   async getState() {
     return await this.stateService.getState();

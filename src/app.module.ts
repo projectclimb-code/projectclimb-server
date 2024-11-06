@@ -5,7 +5,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { RoutesModule } from './modules/routes/routes.module';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { StateModule } from './modules/state/state.module.js';
+import { StateModule } from './modules/state/state.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { StateModule } from './modules/state/state.module.js';
     MongooseModule.forRoot(process.env.DATABASE_URL),
     RoutesModule,
     StateModule,
+    SettingsModule,
     ServeStaticModule.forRoot({
       rootPath: process.env.FILE_STORAGE,
     }),
