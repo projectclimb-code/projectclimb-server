@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Route: {{ route.name }}{% endblock title %}
+
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-4">Route: {{ route.name }}</h1>
+<div class="bg-white shadow-md rounded-lg p-6">
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Name:</strong> {{ route.name }}</p>
+    {# Add other fields if Route model has more than just 'name' in the future #}
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">UUID:</strong> {{ route.uuid }}</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Created:</strong> {{ route.created|date:"Y-m-d H:i:s" }}</p>
+    <p class="text-gray-700 mb-4"><strong class="font-semibold">Updated:</strong> {{ route.updated|date:"Y-m-d H:i:s" }}</p>
+    <div class="mt-6">
+        <a href="{% url 'route_update' route.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a> {# Use .uuid #}
+        <a href="{% url 'route_delete' route.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</a> {# Use .uuid #}
+        <a href="{% url 'route_list' %}" class="text-blue-500 hover:underline ml-4">Back to list</a>
+    </div>
+</div>
+{% endblock content %}

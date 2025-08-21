@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Venues - Climber Project{% endblock title %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-semibold text-gray-800">Venues</h1>
+    <a href="{% url 'venue_create' %}" hx-get="{% url 'venue_create' %}" hx-target="#modal-content" hx-trigger="click" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+        Add Venue
+    </a>
+</div>
+
+<div id="venue-list" class="bg-white shadow-md rounded-lg p-6">
+    {% if venues %}
+        <ul class="space-y-4">
+            {% for venue in venues %}
+            <li class="border-b pb-2 mb-2 flex justify-between items-center">
+                <a href="{% url 'venue_detail' venue.uuid %}" class="text-lg text-blue-600 hover:underline">{{ venue.name }}</a> {# Use venue.uuid #}
+                <div>
+                    <a href="{% url 'venue_update' venue.uuid %}" class="text-sm text-yellow-600 hover:underline mr-2">Edit</a> {# Use venue.uuid #}
+                    <a href="{% url 'venue_delete' venue.uuid %}" class="text-sm text-red-600 hover:underline">Delete</a> {# Use venue.uuid #}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-gray-500">No venues found. <a href="{% url 'venue_create' %}" class="text-blue-500 hover:underline">Add one?</a></p>
+    {% endif %}
+</div>
+
+{# Placeholder for HTMX modal content #}
+<div id="modal-content"></div>
+{% endblock content %}

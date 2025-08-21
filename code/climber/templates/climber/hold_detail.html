@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Hold: {{ hold.name }}{% endblock title %}
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-4">Hold: {{ hold.name }}</h1>
+<div class="bg-white shadow-md rounded-lg p-6">
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Name:</strong> {{ hold.name }}</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Wall:</strong> <a href="{% url 'wall_detail' hold.wall.uuid %}" class="text-blue-600 hover:underline">{{ hold.wall.name }}</a> (Venue: {{ hold.wall.venue.name }})</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Coordinates:</strong></p>
+    <pre class="bg-gray-100 p-2 rounded text-sm">{{ hold.coords|default:"N/A" }}</pre>
+    <p class="text-gray-700 mt-2 mb-2"><strong class="font-semibold">UUID:</strong> {{ hold.uuid }}</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Created:</strong> {{ hold.created|date:"Y-m-d H:i:s" }}</p>
+    <p class="text-gray-700 mb-4"><strong class="font-semibold">Updated:</strong> {{ hold.updated|date:"Y-m-d H:i:s" }}</p>
+    <div class="mt-6">
+        <a href="{% url 'hold_update' hold.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a> {# Use .uuid #}
+        <a href="{% url 'hold_delete' hold.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</a> {# Use .uuid #}
+        <a href="{% url 'hold_list' %}" class="text-blue-500 hover:underline ml-4">Back to list</a>
+    </div>
+</div>
+{% endblock content %}

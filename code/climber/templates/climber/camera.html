@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Camera Stream - Climber Project{% endblock title %}
+
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Camera Stream</h1>
+
+  <!-- Form to input external stream URL -->
+  <form method="get" action="{% url 'camera' %}" class="bg-white shadow-md rounded-lg p-6 mb-6">
+    <div class="mb-4">
+        <label for="stream_url_input" class="block text-gray-700 text-sm font-bold mb-2">External Stream URL (e.g., from go2rtc):</label>
+        <input type="url" name="stream_url" id="stream_url_input" value="{{ stream_url|default:'' }}" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" placeholder="http://<host>:<port>/stream.mjpeg">
+    </div>
+    <div class="flex items-center justify-between">
+        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+            Load External Stream
+        </button>
+        <a href="{% url 'camera' %}" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
+            Load Local Camera
+        </a>
+    </div>
+  </form>
+
+  <!-- Video Display -->
+  <div class="w-full max-w-4xl mx-auto border border-gray-300 rounded-lg overflow-hidden">
+    <img src="{% if stream_url %}{{ stream_url }}{% else %}{% url 'video_feed' %}{% endif %}" alt="Camera stream" class="w-full">
+  </div>
+{% endblock %}

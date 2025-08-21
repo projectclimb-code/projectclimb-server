@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div class="w-full h-screen flex justify-center items-center">
+        <canvas id="gameCanvas" class="border border-gray-200 h-full w-full"></canvas>
+
+        <!-- debug windows -->
+        <div id="debug_div" class="absolute right-0 w-64 h-full bg-gray-100 bg-opacity-70 p-2 text-sm text-opacity-10 shadow-lg overflow-y-auto">
+            <p class="text-m font-bold text-center w-full text-opacity-10">Debug</p>
+            <button id="close_button" class="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center transform translate-x-1/4 -translate-y-1/4 shadow-lg hover:bg-red-600">
+                ×
+            </button>
+        </div>
+    
+        <!-- state display -->
+        <div id="state_info_outer" class="fixed top-5 left-1/2 transform -translate-x-1/2 w-[10%] bg-white shadow-lg">
+            <p id ="state_info" class="text-m font-bold text-center w-full text-opacity-10">Tracking</p>
+        </div>
+    
+        <!-- buttons -->
+        <div id="controls" class="absolute left-4 bottom-4 bg-white shadow-lg rounded-lg p-4">
+            <div class="grid grid-cols-2 gap-2">
+                <button id="button_calibrate" class="bg-blue-500 text-white p-2 rounded">Calibrate</button>
+                <button id="button_track" class="bg-green-500 text-white p-2 rounded">Track</button>
+                <button id="button_zoom_in" class="bg-purple-500 text-white p-2 rounded">Zoom In</button>
+                <button id="button_zoom_out" class="bg-purple-500 text-white p-2 rounded">Zoom Out</button>
+                <button id="button_rotate_left" class="bg-orange-500 text-white p-2 rounded">Rotate Left</button>
+                <!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .corner-handle {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: rgba(255, 0, 0, 0.7);
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: move;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="w-full h-screen flex justify-center items-center">
+        <canvas id="gameCanvas" class="border border-gray-200 h-full w-full"></canvas>
+
+        <!-- Corner handles for perspective correction -->
+        <div id="corner-handles" style="display: none;">
+            <div class="corner-handle" id="top-left-handle"></div>
+            <div class="corner-handle" id="top-right-handle"></div>
+            <div class="corner-handle" id="bottom-left-handle"></div>
+            <div class="corner-handle" id="bottom-right-handle"></div>
+        </div>
+
+        <!-- debug windows -->
+        <div id="debug_div" class="absolute right-0 w-64 h-full bg-gray-100 bg-opacity-70 p-2 text-sm text-opacity-10 shadow-lg overflow-y-auto">
+            <p class="text-m font-bold text-center w-full text-opacity-10">Debug</p>
+            <button id="close_button" class="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center transform translate-x-1/4 -translate-y-1/4 shadow-lg hover:bg-red-600">
+                ×
+            </button>
+        </div>
+    
+        <!-- state display -->
+        <div id="state_info_outer" class="fixed top-5 left-1/2 transform -translate-x-1/2 w-[10%] bg-white shadow-lg">
+            <p id ="state_info" class="text-m font-bold text-center w-full text-opacity-10">Tracking</p>
+        </div>
+    
+        <!-- buttons -->
+        <div id="controls" class="absolute left-4 bottom-4 bg-white shadow-lg rounded-lg p-4">
+            <div class="grid grid-cols-2 gap-2">
+                <button id="button_calibrate" class="bg-blue-500 text-white p-2 rounded">Calibrate</button>
+                <button id="button_track" class="bg-green-500 text-white p-2 rounded">Track</button>
+                <button id="button_zoom_in" class="bg-purple-500 text-white p-2 rounded">Zoom In</button>
+                <button id="button_zoom_out" class="bg-purple-500 text-white p-2 rounded">Zoom Out</button>
+                <button id="button_rotate_left" class="bg-orange-500 text-white p-2 rounded">Rotate Left</button>
+                <button id="button_rotate_right" class="bg-orange-500 text-white p-2 rounded">Rotate Right</button>
+                <button id="button_increase_speed" class="bg-gray-500 text-white p-2 rounded">Increase Speed</button>
+                <button id="button_decrease_speed" class="bg-gray-500 text-white p-2 rounded">Decrease Speed</button>
+                <button id="button_perspective" class="bg-yellow-500 text-white p-2 rounded col-span-2">Toggle Perspective Correction</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var ws = new WebSocket('ws://localhost:8000/ws/moves/player');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const data_holder = null;
+        const VISIBILITY_TRESHOLD = 0.5;
+        canvas.width = w;
+        canvas.height = h;
+
+        // Transformation variables
+        let scale = 1; // Initial scale
+        let rotation = 0; // Initial rotation in degrees
+
+        // Maximum speed in pixels per frame (initial value)
+        let MAX_SPEED = 10;
+
+        // Initialize climber with history buffers
+        const climber = {
+            RIGHT_WRIST: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#FF0000', radius: 10, history: [] },
+            LEFT_WRIST: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#FF0000', radius: 10, history: [] },
+            RIGHT_ELBOW: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_ELBOW: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_SHOULDER: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_SHOULDER: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_HIP: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_HIP: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_KNEE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_KNEE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_ANKLE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#FF0000', radius: 10, history: [] },
+            LEFT_ANKLE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#FF0000', radius: 10, history: [] },
+            NOSE: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#3464eb', radius: 30, history: [] },
+        };
+
+        // --- Perspective Correction ---
+        const handlesContainer = document.getElementById('corner-handles');
+        const handles = {
+            tl: document.getElementById('top-left-handle'),
+            tr: document.getElementById('top-right-handle'),
+            bl: document.getElementById('bottom-left-handle'),
+            br: document.getElementById('bottom-right-handle')
+        };
+
+        let corners = {
+            tl: { x: 0, y: 0 },
+            tr: { x: w, y: 0 },
+            bl: { x: 0, y: h },
+            br: { x: w, y: h }
+        };
+
+        function updateHandlePositions() {
+            for (const key in handles) {
+                handles[key].style.left = corners[key].x - 10 + 'px';
+                handles[key].style.top = corners[key].y - 10 + 'px';
+            }
+        }
+
+        function getPerspectiveTransform(src, dst) {
+            const a = [], b = [];
+            for (let i = 0; i < 4; i++) {
+                a.push([src[i].x, src[i].y, 1, 0, 0, 0, -src[i].x * dst[i].x, -src[i].y * dst[i].x]);
+                b.push(dst[i].x);
+                a.push([0, 0, 0, src[i].x, src[i].y, 1, -src[i].x * dst[i].y, -src[i].y * dst[i].y]);
+                b.push(dst[i].y);
+            }
+
+            const h = solve(a, b);
+            const H = [
+                [h[0], h[1], 0, h[2]],
+                [h[3], h[4], 0, h[5]],
+                [   0,    0, 1,    0],
+                [h[6], h[7], 0,    1]
+            ];
+            return H;
+        }
+        
+        function solve(a, b) {
+            const n = a.length;
+            for (let i = 0; i < n; i++) {
+                let max = i;
+                for (let j = i + 1; j < n; j++) {
+                    if (Math.abs(a[j][i]) > Math.abs(a[max][i])) {
+                        max = j;
+                    }
+                }
+                [a[i], a[max]] = [a[max], a[i]];
+                [b[i], b[max]] = [b[max], b[i]];
+
+                for (let j = i + 1; j < n; j++) {
+                    const factor = a[j][i] / a[i][i];
+                    for (let k = i; k < n; k++) {
+                        a[j][k] -= factor * a[i][k];
+                    }
+                    b[j] -= factor * b[i];
+                }
+            }
+
+            const x = new Array(n);
+            for (let i = n - 1; i >= 0; i--) {
+                let sum = 0;
+                for (let j = i + 1; j < n; j++) {
+                    sum += a[i][j] * x[j];
+                }
+                x[i] = (b[i] - sum) / a[i][i];
+            }
+            return x;
+        }
+
+        function applyPerspective() {
+            const src = [{x:0,y:0}, {x:w,y:0}, {x:0,y:h}, {x:w,y:h}];
+            const dst = [corners.tl, corners.tr, corners.bl, corners.br];
+            const t = getPerspectiveTransform(src, dst);
+            
+            canvas.style.transform = `matrix3d(${t[0][0]}, ${t[1][0]}, ${t[2][0]}, ${t[3][0]}, ${t[0][1]}, ${t[1][1]}, ${t[2][1]}, ${t[3][1]}, ${t[0][2]}, ${t[1][2]}, ${t[2][2]}, ${t[3][2]}, ${t[0][3]}, ${t[1][3]}, ${t[2][3]}, ${t[3][3]})`;
+            canvas.style.transformOrigin = '0 0';
+        }
+
+        let draggedHandle = null;
+        for (const key in handles) {
+            handles[key].addEventListener('mousedown', (e) => {
+                draggedHandle = key;
+            });
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            if (draggedHandle) {
+                corners[draggedHandle].x = e.clientX;
+                corners[draggedHandle].y = e.clientY;
+                updateHandlePositions();
+                applyPerspective();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            draggedHandle = null;
+        });
+
+        document.getElementById('button_perspective').addEventListener('click', () => {
+            const isDisplayed = handlesContainer.style.display === 'block';
+            handlesContainer.style.display = isDisplayed ? 'none' : 'block';
+            if (!isDisplayed) {
+                updateHandlePositions();
+            }
+        });
+        // --- End Perspective Correction ---
+
+
+        // Function to average the last three positions
+        function getSmoothedPosition(point) {
+            if (point.history.length === 0) return { x: point.x, y: point.y };
+
+            // Average the last three positions
+            const history = point.history.slice(-3); // Get the last 3 positions
+            const avgX = history.reduce((sum, pos) => sum + pos.x, 0) / history.length;
+            const avgY = history.reduce((sum, pos) => sum + pos.y, 0) / history.length;
+
+            return { x: avgX, y: avgY };
+        }
+
+        // Function to limit the speed of movement
+        function limitSpeed(point, newX, newY) {
+            const dx = newX - point.x;
+            const dy = newY - point.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > MAX_SPEED) {
+                const ratio = MAX_SPEED / distance;
+                newX = point.x + dx * ratio;
+                newY = point.y + dy * ratio;
+            }
+
+            return { x: newX, y: newY };
+        }
+
+        function setPose(data) {
+            if (typeof climber != "undefined") {
+                for (const [key, value] of Object.entries(climber)) {
+                    // Update the history buffer
+                    value.history.push({ x: data[key].x * w, y: data[key].y * h });
+                    if (value.history.length > 3) value.history.shift(); // Keep only the last 3 positions
+
+                    // Get smoothed position
+                    const smoothed = getSmoothedPosition(value);
+
+                    // Limit speed
+                    const limited = limitSpeed(value, smoothed.x, smoothed.y);
+
+                    // Update the point's position
+                    value.x = limited.x;
+                    value.y = limited.y;
+                    value.visibility = data[key].visibility;
+                }
+                drawPose();
+            }
+        }
+
+        function drawPose() {
+            // Clear the canvas before drawing new circles
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw each visible joint
+            for (const [key, value] of Object.entries(climber)) {
+                if (value.visibility > VISIBILITY_TRESHOLD && value.v) { 
+                    ctx.beginPath();
+                    ctx.arc(value.x, value.y, value.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = value.color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            }
+        }
+
+        // Transformation function
+        function applyTransformation() {
+            // Reset the transformation matrix
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Apply transformations
+            ctx.translate(canvas.width / 2, canvas.height / 2); // Move origin to center
+            ctx.scale(scale, scale); // Apply scaling
+            ctx.rotate((rotation * Math.PI) / 180); // Apply rotation (convert degrees to radians)
+            ctx.translate(-canvas.width / 2, -canvas.height / 2); // Move origin back
+
+            // Redraw the pose
+            drawPose();
+        }
+
+        // Increase MAX_SPEED
+        document.getElementById("button_increase_speed").addEventListener("click", function() {
+            MAX_SPEED += 2; // Increase speed by 2 pixels per frame
+            debug_message(`Speed increased to ${MAX_SPEED}`);
+        });
+
+        // Decrease MAX_SPEED
+        document.getElementById("button_decrease_speed").addEventListener("click", function() {
+            MAX_SPEED = Math.max(1, MAX_SPEED - 2); // Decrease speed by 2 pixels per frame, with a minimum of 1
+            debug_message(`Speed decreased to ${MAX_SPEED}`);
+        });
+
+        // Debug message function with auto-scroll
+        function debug_message(message) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            const div = document.getElementById("debug_div");
+            div.appendChild(p);
+
+            // Automatically scroll to the bottom
+            div.scrollTop = div.scrollHeight;
+        }
+
+        // Rest of the code remains the same...
+        document.getElementById("button_calibrate").addEventListener("click", function() {
+            debug_message("Calibrating");
+            ws.send("calibrate");
+            set_state("Calibrating");
+        });
+
+        document.getElementById("button_track").addEventListener("click", function() {
+            debug_message("Tracking");
+            ws.send("stop_calibrate");
+            set_state("Tracking");
+        });
+
+        document.getElementById("button_zoom_in").addEventListener("click", function() {
+            scale *= 1.1; // Increase scale by 10%
+            applyTransformation();
+        });
+
+        document.getElementById("button_zoom_out").addEventListener("click", function() {
+            scale /= 1.1; // Decrease scale by 10%
+            applyTransformation();
+        });
+
+        document.getElementById("button_rotate_left").addEventListener("click", function() {
+            rotation -= 10; // Rotate left by 10 degrees
+            applyTransformation();
+        });
+
+        document.getElementById("button_rotate_right").addEventListener("click", function() {
+            rotation += 10; // Rotate right by 10 degrees
+            applyTransformation();
+        });
+
+        function debug_clear() {
+            const div = document.getElementById("debug_div");
+            div.innerHTML = "";
+        }
+
+        function set_state(state) {
+            const state_info = document.getElementById("state_info");
+            state_info.innerHTML = state;
+        }
+
+        function ws_connect() {
+            ws.onopen = function() {
+                ws.send("Player connected to websocket");
+            };
+
+            ws.onmessage = function(e) {
+                try {
+                    data = JSON.parse(e.data);
+                    if (data.type == "pose") {
+                        setPose(data.coordinates);
+                    } else if (data.type == "state") {
+                        set_state(data.state);
+                    }
+                } catch(err) {
+                    debug_message(e.data);
+                    console.log("Player error: ", err);
+                }
+            };
+
+            ws.onclose = function(e) {
+                console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+                setTimeout(function() {
+                    ws_connect();
+                }, 1000);
+            };
+
+            ws.onerror = function(err) {
+                console.error('Socket encountered error: ', err.message, 'Closing socket');
+                ws.close();
+            };
+        }
+
+        ws_connect();
+
+        document.getElementById('close_button').addEventListener('click', function() {
+            document.getElementById('debug_div').style.display = 'none';
+        });
+    </script>
+</body>
+</html>
+                <button id="button_increase_speed" class="bg-gray-500 text-white p-2 rounded">Increase Speed</button>
+                <button id="button_decrease_speed" class="bg-gray-500 text-white p-2 rounded">Decrease Speed</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var ws = new WebSocket('ws://localhost:8000/ws/moves/player');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const data_holder = null;
+        const VISIBILITY_TRESHOLD = 0.5;
+        canvas.width = w;
+        canvas.height = h;
+
+        // Transformation variables
+        let scale = 1; // Initial scale
+        let rotation = 0; // Initial rotation in degrees
+
+        // Maximum speed in pixels per frame (initial value)
+        let MAX_SPEED = 10;
+
+        // Initialize climber with history buffers
+        const climber = {
+            RIGHT_WRIST: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#FF0000', radius: 10, history: [] },
+            LEFT_WRIST: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#FF0000', radius: 10, history: [] },
+            RIGHT_ELBOW: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_ELBOW: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_SHOULDER: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_SHOULDER: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_HIP: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_HIP: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_KNEE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            LEFT_KNEE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#9c34eb', radius: 5, history: [] },
+            RIGHT_ANKLE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#FF0000', radius: 10, history: [] },
+            LEFT_ANKLE: { x: 0, y: 0, z: 0, visibilty: 0, v: false, color: '#FF0000', radius: 10, history: [] },
+            NOSE: { x: 0, y: 0, z: 0, visibilty: 0, v: true, color: '#3464eb', radius: 30, history: [] },
+        };
+
+        // Function to average the last three positions
+        function getSmoothedPosition(point) {
+            if (point.history.length === 0) return { x: point.x, y: point.y };
+
+            // Average the last three positions
+            const history = point.history.slice(-3); // Get the last 3 positions
+            const avgX = history.reduce((sum, pos) => sum + pos.x, 0) / history.length;
+            const avgY = history.reduce((sum, pos) => sum + pos.y, 0) / history.length;
+
+            return { x: avgX, y: avgY };
+        }
+
+        // Function to limit the speed of movement
+        function limitSpeed(point, newX, newY) {
+            const dx = newX - point.x;
+            const dy = newY - point.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > MAX_SPEED) {
+                const ratio = MAX_SPEED / distance;
+                newX = point.x + dx * ratio;
+                newY = point.y + dy * ratio;
+            }
+
+            return { x: newX, y: newY };
+        }
+
+        function setPose(data) {
+            if (typeof climber != "undefined") {
+                for (const [key, value] of Object.entries(climber)) {
+                    // Update the history buffer
+                    value.history.push({ x: data[key].x * w, y: data[key].y * h });
+                    if (value.history.length > 3) value.history.shift(); // Keep only the last 3 positions
+
+                    // Get smoothed position
+                    const smoothed = getSmoothedPosition(value);
+
+                    // Limit speed
+                    const limited = limitSpeed(value, smoothed.x, smoothed.y);
+
+                    // Update the point's position
+                    value.x = limited.x;
+                    value.y = limited.y;
+                    value.visibility = data[key].visibility;
+                }
+                drawPose();
+            }
+        }
+
+        function drawPose() {
+            // Clear the canvas before drawing new circles
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw each visible joint
+            for (const [key, value] of Object.entries(climber)) {
+                if (value.visibility > VISIBILITY_TRESHOLD && value.v) { 
+                    ctx.beginPath();
+                    ctx.arc(value.x, value.y, value.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = value.color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            }
+        }
+
+        // Transformation function
+        function applyTransformation() {
+            // Reset the transformation matrix
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Apply transformations
+            ctx.translate(canvas.width / 2, canvas.height / 2); // Move origin to center
+            ctx.scale(scale, scale); // Apply scaling
+            ctx.rotate((rotation * Math.PI) / 180); // Apply rotation (convert degrees to radians)
+            ctx.translate(-canvas.width / 2, -canvas.height / 2); // Move origin back
+
+            // Redraw the pose
+            drawPose();
+        }
+
+        // Increase MAX_SPEED
+        document.getElementById("button_increase_speed").addEventListener("click", function() {
+            MAX_SPEED += 2; // Increase speed by 2 pixels per frame
+            debug_message(`Speed increased to ${MAX_SPEED}`);
+        });
+
+        // Decrease MAX_SPEED
+        document.getElementById("button_decrease_speed").addEventListener("click", function() {
+            MAX_SPEED = Math.max(1, MAX_SPEED - 2); // Decrease speed by 2 pixels per frame, with a minimum of 1
+            debug_message(`Speed decreased to ${MAX_SPEED}`);
+        });
+
+        // Debug message function with auto-scroll
+        function debug_message(message) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            const div = document.getElementById("debug_div");
+            div.appendChild(p);
+
+            // Automatically scroll to the bottom
+            div.scrollTop = div.scrollHeight;
+        }
+
+        // Rest of the code remains the same...
+        document.getElementById("button_calibrate").addEventListener("click", function() {
+            debug_message("Calibrating");
+            ws.send("calibrate");
+            set_state("Calibrating");
+        });
+
+        document.getElementById("button_track").addEventListener("click", function() {
+            debug_message("Tracking");
+            ws.send("stop_calibrate");
+            set_state("Tracking");
+        });
+
+        document.getElementById("button_zoom_in").addEventListener("click", function() {
+            scale *= 1.1; // Increase scale by 10%
+            applyTransformation();
+        });
+
+        document.getElementById("button_zoom_out").addEventListener("click", function() {
+            scale /= 1.1; // Decrease scale by 10%
+            applyTransformation();
+        });
+
+        document.getElementById("button_rotate_left").addEventListener("click", function() {
+            rotation -= 10; // Rotate left by 10 degrees
+            applyTransformation();
+        });
+
+        document.getElementById("button_rotate_right").addEventListener("click", function() {
+            rotation += 10; // Rotate right by 10 degrees
+            applyTransformation();
+        });
+
+        function debug_clear() {
+            const div = document.getElementById("debug_div");
+            div.innerHTML = "";
+        }
+
+        function set_state(state) {
+            const state_info = document.getElementById("state_info");
+            state_info.innerHTML = state;
+        }
+
+        function ws_connect() {
+            ws.onopen = function() {
+                ws.send("Player connected to websocket");
+            };
+
+            ws.onmessage = function(e) {
+                try {
+                    data = JSON.parse(e.data);
+                    if (data.type == "pose") {
+                        setPose(data.coordinates);
+                    } else if (data.type == "state") {
+                        set_state(data.state);
+                    }
+                } catch(err) {
+                    debug_message(e.data);
+                    console.log("Player error: ", err);
+                }
+            };
+
+            ws.onclose = function(e) {
+                console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+                setTimeout(function() {
+                    ws_connect();
+                }, 1000);
+            };
+
+            ws.onerror = function(err) {
+                console.error('Socket encountered error: ', err.message, 'Closing socket');
+                ws.close();
+            };
+        }
+
+        ws_connect();
+
+        document.getElementById('close_button').addEventListener('click', function() {
+            document.getElementById('debug_div').style.display = 'none';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+add settings (calibration, itd...) to wall models
+check https://createjs.com/docs/easeljs/modules/EaselJS.html
+
+
+https://github.com/projectclimb-code/projectclimb-player
+
+
+hold is start
+
+animate next hold
+
+http://paperjs.org/
+
+https://projektplezanje.atlassian.net/
+

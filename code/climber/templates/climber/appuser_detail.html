@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}AppUser: {{ appuser.user.username }}{% endblock title %}
+
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-4">AppUser: {{ appuser.user.username }}</h1>
+<div class="bg-white shadow-md rounded-lg p-6">
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">User:</strong> {{ appuser.user.username }} ({{ appuser.user.email }})</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Group:</strong> <a href="{% url 'group_detail' appuser.group.uuid %}" class="text-blue-600 hover:underline">{{ appuser.group.name }}</a></p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">UUID:</strong> {{ appuser.uuid }}</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Created:</strong> {{ appuser.created|date:"Y-m-d H:i:s" }}</p>
+    <p class="text-gray-700 mb-4"><strong class="font-semibold">Updated:</strong> {{ appuser.updated|date:"Y-m-d H:i:s" }}</p>
+    <div class="mt-6">
+        <a href="{% url 'appuser_update' appuser.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a> {# Use .uuid #}
+        <a href="{% url 'appuser_delete' appuser.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</a> {# Use .uuid #}
+        <a href="{% url 'appuser_list' %}" class="text-blue-500 hover:underline ml-4">Back to list</a>
+    </div>
+</div>
+{% endblock content %}

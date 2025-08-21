@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Real-time Pose Visualization{% endblock title %}
+
+{% block content %}
+{% if not fullscreen %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-4">Real-time Pose Visualization</h1>
+<p class="text-gray-600 mb-4">
+    This page visualizes human pose landmarks streamed in real-time. To start, run the pose streamer script from your terminal:
+</p>
+<pre class="bg-gray-900 text-white p-4 rounded-lg mb-6">
+python code/pose_streamer.py --source 0
+</pre>
+<p class="text-gray-600 mb-4">
+    Once the streamer is running and connected, you should see the pose rendered below.
+</p>
+<a href="?fullscreen=true" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mb-4 inline-block">Go Fullscreen</a>
+{% endif %}
+
+<div id="pose-container" class="{% if fullscreen %}fixed top-0 left-0 w-full h-full bg-black z-50{% else %}w-full h-96 bg-black rounded-lg shadow-md relative{% endif %}">
+    <div id="connection-status" class="absolute top-4 left-4 text-white font-semibold bg-red-500 px-3 py-1 rounded">
+        Connecting...
+    </div>
+    {% if fullscreen %}
+    <a href="?" class="absolute top-4 right-4 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded z-50">Exit Fullscreen</a>
+    {% endif %}
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const statusElement = document.getElementById('connection-status');
+        const container = document.getElementById('pose-container');
+        let socket;
+
+        // --- WebSocket Setup with Reconnection ---
+        function connect() {
+            const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+            const wsPath = wsScheme + '://' + window.location.host + "/ws/pose/";
+            
+            socket = new WebSocket(wsPath);
+            console.log("Attempting to connect to WebSocket...");
+            statusElement.textContent = 'Connecting...';
+            statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-yellow-600 px-3 py-1 rounded';
+
+
+            socket.onopen = function (e) {
+                console.log("WebSocket connection established.");
+                statusElement.textContent = 'Connected';
+                statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-green-500 px-3 py-1 rounded';
+            };
+
+            socket.onclose = function (e) {
+                console.error('WebSocket connection closed. Attempting to reconnect in 3 seconds...');
+                statusElement.textContent = 'Reconnecting...';
+                statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-red-500 px-3 py-1 rounded';
+                // Wait 3 seconds before trying to reconnect
+                setTimeout(function() {
+                    connect();
+                }, 3000);
+            };
+
+            socket.onerror = function (err) {
+                console.error('WebSocket error observed:', err);
+                // The onclose event will be fired next, which will handle reconnection.
+                socket.close();
+            };
+
+            socket.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+                // Pass landmarks to the 3D rendering function
+                updatePose(data);
+            };
+        }
+        
+        // --- Three.js Scene Setup ---
+        let scene, camera, renderer, poseLines, posePoints;
+        const landmarkConnections = [
+            // Define connections based on MediaPipe Pose landmark indices
+            [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
+            [9, 10], [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+            [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [11, 23], [12, 24],
+            [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30],
+            [29, 31], [30, 32], [27, 31], [28, 32]
+        ];
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.z = 2; // Adjust camera position to view the pose
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Create initial empty geometry for points and lines
+            const pointsGeometry = new THREE.BufferGeometry();
+            const pointsMaterial = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.05 });
+            posePoints = new THREE.Points(pointsGeometry, pointsMaterial);
+            scene.add(posePoints);
+
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+            const lineGeometry = new THREE.BufferGeometry();
+            poseLines = new THREE.LineSegments(lineGeometry, lineMaterial);
+            scene.add(poseLines);
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        function updatePose(landmarks) {
+            if (!landmarks || landmarks.length === 0) {
+                // Clear the pose if no landmarks are received
+                posePoints.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+                poseLines.geometry.setIndex([]);
+                poseLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+                return;
+            }
+
+            const points = [];
+            landmarks.forEach(lm => {
+                // Center and scale the landmarks for better viewing
+                points.push(-lm.x, -lm.y, -lm.z);
+            });
+
+            posePoints.geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            
+            const indices = [];
+            landmarkConnections.forEach(conn => {
+                if (landmarks[conn[0]].visibility > 0.5 && landmarks[conn[1]].visibility > 0.5) {
+                    indices.push(conn[0], conn[1]);
+                }
+            });
+            
+            poseLines.geometry.setIndex(indices);
+            poseLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+
+            // Update geometries
+            posePoints.geometry.attributes.position.needsUpdate = true;
+            poseLines.geometry.attributes.position.needsUpdate = true;
+            poseLines.geometry.index.needsUpdate = true;
+        }
+
+        // Initial connection
+        connect();
+        // Init 3D scene
+        init();
+    });
+</script>
+{% endblock extra_js %}

@@ -1,0 +1,29 @@
+{% extends request.htmx|yesno:"_partial.html,base.html" %}
+{% block title %}{% if object %}Edit Route Point{% else %}Create Route Point{% endif %}{% endblock title %}
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-6">{% if object %}Edit Route Point (Order: {{ object.order }}) for Route: {{ object.route.name }}{% else %}Create New Route Point{% endif %}</h1>
+<form method="post" {% if request.htmx %}hx-post="{{ request.path }}" hx-target="body" hx-swap="innerHTML"{% endif %} class="bg-white shadow-md rounded-lg p-8">
+    {% csrf_token %}
+    <div class="mb-4">
+        <label for="{{ form.route.id_for_label }}" class="block text-gray-700 text-sm font-bold mb-2">{{ form.route.label }}</label>
+        {{ form.route }} {# Renders as <select> #}
+        {% if form.route.errors %}{% for error in form.route.errors %}<p class="text-red-500 text-xs italic">{{ error }}</p>{% endfor %}{% endif %}
+    </div>
+    <div class="mb-4">
+        <label for="{{ form.hold.id_for_label }}" class="block text-gray-700 text-sm font-bold mb-2">{{ form.hold.label }}</label>
+        {{ form.hold }} {# Renders as <select> #}
+        {% if form.hold.errors %}{% for error in form.hold.errors %}<p class="text-red-500 text-xs italic">{{ error }}</p>{% endfor %}{% endif %}
+    </div>
+    <div class="mb-4">
+        <label for="{{ form.order.id_for_label }}" class="block text-gray-700 text-sm font-bold mb-2">{{ form.order.label }}</label>
+        {{ form.order }} {# Renders as <input type="number"> #}
+        {% if form.order.errors %}{% for error in form.order.errors %}<p class="text-red-500 text-xs italic">{{ error }}</p>{% endfor %}{% endif %}
+    </div>
+    <div class="mt-8 flex justify-end">
+        <a href="{% if object %}{% url 'routepoint_detail' object.pk %}{% else %}{% url 'routepoint_list' %}{% endif %}" class="text-gray-600 hover:text-gray-800 py-2 px-4 mr-2">Cancel</a>
+        <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+            {% if object %}Update{% else %}Create{% endif %} Route Point
+        </button>
+    </div>
+</form>
+{% endblock content %}

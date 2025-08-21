@@ -1,0 +1,40 @@
+{% extends request.htmx|yesno:"_partial.html,base.html" %}
+
+{% block title %}{% if object %}Edit AppUser {{ object.user.username }}{% else %}Create AppUser{% endif %}{% endblock title %}
+
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-6">{% if object %}Edit AppUser {{ object.user.username }}{% else %}Create New AppUser{% endif %}</h1>
+
+<form method="post" 
+      {% if request.htmx %}hx-post="{{ request.path }}" hx-target="body" hx-swap="innerHTML"{% endif %} 
+      class="bg-white shadow-md rounded-lg p-8">
+    {% csrf_token %}
+    
+    <div class="mb-4">
+        <label for="{{ form.user.id_for_label }}" class="block text-gray-700 text-sm font-bold mb-2">{{ form.user.label }}</label>
+        {{ form.user }} {# Renders as <select> #}
+        {% if form.user.errors %}
+            {% for error in form.user.errors %}
+                <p class="text-red-500 text-xs italic">{{ error }}</p>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="mb-4">
+        <label for="{{ form.group.id_for_label }}" class="block text-gray-700 text-sm font-bold mb-2">{{ form.group.label }}</label>
+        {{ form.group }} {# Renders as <select> #}
+        {% if form.group.errors %}
+            {% for error in form.group.errors %}
+                <p class="text-red-500 text-xs italic">{{ error }}</p>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="mt-8 flex justify-end">
+        <a href="{% if object %}{% url 'appuser_detail' object.uuid %}{% else %}{% url 'appuser_list' %}{% endif %}" class="text-gray-600 hover:text-gray-800 py-2 px-4 mr-2">Cancel</a>
+        <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+            {% if object %}Update{% else %}Create{% endif %} AppUser
+        </button>
+    </div>
+</form>
+{% endblock content %}

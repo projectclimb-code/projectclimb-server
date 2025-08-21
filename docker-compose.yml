@@ -1,0 +1,64 @@
+
+#version: '3.8'
+
+services:
+
+
+  redis:
+    image: "redis:alpine"
+    container_name: climber_redis
+#   ports:
+#       - "6379:6379"
+
+
+
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: climber_db
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   env_file:
+  #     - .env
+  #   expose:
+  #     - 5432
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  web:
+    #image: climber
+    build: .
+    container_name: climber_web
+    command: uv run daphne -b 0.0.0.0 -p 8012 app.asgi:application
+    #command: tail -f /dev/null
+    volumes:
+      - ./code/:/code/
+      # - static_volume:/usr/src/app/staticfiles/
+    ports:
+      - "8012:8012"
+    env_file:
+      - .env
+    # depends_on:
+    #   - redis
+    # depends_on:
+    #   db:
+    #     condition: service_healthy
+
+  # nginx:
+  #   build: ./nginx
+  #   container_name: climber_nginx
+  #   volumes:
+  #     - ./nginx/static/:/code/static/
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - web
+
+
+
+# networks:
+#    default:
+#       external:
+#          name: traefik_default
