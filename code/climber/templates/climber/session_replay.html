@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block title %}Replay Session - {{ session.name }}{% endblock %}
+
+{% block content %}
+<h1 class="text-3xl font-semibold text-gray-800 mb-4">Replay: {{ session.name }}</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- Main replay area -->
+    <div class="lg:col-span-3">
+        <div class="relative bg-black rounded-lg overflow-hidden" style="height: 600px;">
+            <!-- Live webcam feed -->
+            <img id="webcam-feed" src="{% url 'video_feed' %}" alt="Live webcam" 
+                 class="absolute inset-0 w-full h-full object-cover">
+            
+            <!-- Pose overlay container -->
+            <div id="pose-overlay" class="absolute inset-0"></div>
+            
+            <!-- Connection status -->
+            <div id="connection-status" class="absolute top-4 left-4 text-white font-semibold bg-red-500 px-3 py-1 rounded">
+                Connecting...
+            </div>
+        </div>
+        
+        <!-- Playback controls -->
+        <div class="bg-gray-800 p-4 rounded-b-lg">
+            <div class="flex items-center space-x-4">
+                <button id="play-pause" class="bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                    Play
+                </button>
+                <div class="flex-1">
+                    <input type="range" id="timeline" min="0" max="{{ session.frame_count| default:0 }}" value="0" 
+                           class="w-full">
+                    <div class="flex justify-between text-white text-sm mt-1">
+                        <span id="current-time">00:00</span>
+                        <span id="total-time">{{ session.duration }}s</span>
+                    </div>
+                </div>
+                <div class="text-white">
+                    Speed: 
+                    <select id="playback-speed" class="bg-gray-700 px-2 py-1 rounded">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Session info sidebar -->
+    <div class="lg:col-span-1">
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Session Info</h2>
+            <div class="space-y-2 text-sm">
+                <p><strong>Name:</strong> {{ session.name }}</p>
+                <p><strong>Description:</strong> {{ session.description|default:"No description" }}</p>
+                <p><strong>Created:</strong> {{ session.created|date:"Y-m-d H:i" }}</p>
+                <p><strong>Duration:</strong> {{ session.duration }} seconds</p>
+                <p><strong>Frames:</strong> {{ session.frame_count }}</p>
+                <p><strong>Status:</strong> 
+                    <span class="inline-block px-2 py-1 text-xs rounded-full 
+                        {% if session.status == 'completed' %}bg-green-100 text-green-800
+                        {% elif session.status == 'recording' %}bg-red-100 text-red-800
+                        {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                        {{ session.status|title }}
+                    </span>
+                </p>
+            </div>
+            
+            <div class="mt-6 space-y-2">
+                <a href="{% url 'session_detail' session.uuid %}" 
+                   class="block w-full bg-gray-500 hover:bg-gray-700 text-white px-4 py-2 rounded text-center">
+                    Back to Details
+                </a>
+                <a href="{% url 'session_list' %}" 
+                   class="block w-full bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded text-center">
+                    All Sessions
+                </a>
+            </div>
+        </div>
+        
+        <!-- Replay tips -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+            <h3 class="font-semibold text-blue-800 mb-2">Replay Tips:</h3>
+            <ul class="text-sm text-blue-700 space-y-1">
+                <li>• Position yourself in front of the camera</li>
+                <li>• The recorded pose will overlay on your live video</li>
+                <li>• Use the timeline to jump to specific moments</li>
+                <li>• Adjust playback speed to study movements</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const sessionId = "{{ session.uuid }}";
+        const statusElement = document.getElementById('connection-status');
+        const overlayElement = document.getElementById('pose-overlay');
+        const playPauseBtn = document.getElementById('play-pause');
+        const timeline = document.getElementById('timeline');
+        const currentTimeEl = document.getElementById('current-time');
+        const playbackSpeed = document.getElementById('playback-speed');
+        
+        let socket;
+        let isPlaying = false;
+        let currentFrame = 0;
+        let scene, camera, renderer, poseLines, posePoints;
+        
+        // WebSocket setup for replay
+        function connect() {
+            const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+            const wsPath = wsScheme + '://' + window.location.host + `/ws/session/${sessionId}/`;
+            
+            socket = new WebSocket(wsPath);
+            
+            socket.onopen = function () {
+                statusElement.textContent = 'Connected';
+                statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-green-500 px-3 py-1 rounded';
+            };
+            
+            socket.onclose = function () {
+                statusElement.textContent = 'Disconnected';
+                statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-red-500 px-3 py-1 rounded';
+            };
+            
+            socket.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'frame_data') {
+                    currentFrame = data.frame_number;
+                    timeline.value = currentFrame;
+                    currentTimeEl.textContent = formatTime(data.timestamp);
+                    updatePose(data.pose_data);
+                } else if (data.type === 'error') {
+                    console.error('Replay error:', data.message);
+                    statusElement.textContent = 'Error: ' + data.message;
+                    statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-red-600 px-3 py-1 rounded';
+                }
+            };
+        }
+        
+        // Initialize Three.js for pose overlay
+        function initScene() {
+            scene = new THREE.Scene();
+            scene.background = null; // Transparent background for overlay
+            
+            // Set up camera to match video dimensions
+            camera = new THREE.PerspectiveCamera(75, overlayElement.clientWidth / overlayElement.clientHeight, 0.1, 1000);
+            camera.position.z = 2;
+            
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(overlayElement.clientWidth, overlayElement.clientHeight);
+            renderer.setClearColor(0x000000, 0); // Transparent background
+            overlayElement.appendChild(renderer.domElement);
+            
+            // Create pose visualization elements
+            const pointsGeometry = new THREE.BufferGeometry();
+            const pointsMaterial = new THREE.PointsMaterial({ 
+                color: 0x00ff00, 
+                size: 0.05,
+                transparent: true,
+                opacity: 0.8
+            });
+            posePoints = new THREE.Points(pointsGeometry, pointsMaterial);
+            scene.add(posePoints);
+            
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            const lineGeometry = new THREE.BufferGeometry();
+            poseLines = new THREE.LineSegments(lineGeometry, lineMaterial);
+            scene.add(poseLines);
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                camera.aspect = overlayElement.clientWidth / overlayElement.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(overlayElement.clientWidth, overlayElement.clientHeight);
+            });
+            
+            animate();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        
+        function updatePose(landmarks) {
+            if (!landmarks || landmarks.length === 0) return;
+            
+            const landmarkConnections = [
+                [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
+                [9, 10], [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+                [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [11, 23], [12, 24],
+                [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30],
+                [29, 31], [30, 32], [27, 31], [28, 32]
+            ];
+            
+            const points = [];
+            landmarks.forEach(lm => {
+                points.push(-lm.x, -lm.y, -lm.z);
+            });
+            
+            posePoints.geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            
+            const indices = [];
+            landmarkConnections.forEach(conn => {
+                if (landmarks[conn[0]] && landmarks[conn[1]] && 
+                    landmarks[conn[0]] > 0.5 && landmarks[conn[1]] > 0.5) {
+                    indices.push(conn[0], conn[1]);
+                }
+            });
+            
+            poseLines.geometry.setIndex(indices);
+            poseLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            
+            posePoints.geometry.attributes.position.needsUpdate = true;
+            poseLines.geometry.attributes.position.needsUpdate = true;
+            poseLines.geometry.index.needsUpdate = true;
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        // Playback controls
+        playPauseBtn.addEventListener('click', () => {
+            if (isPlaying) {
+                socket.send(JSON.stringify({ type: 'pause' }));
+                playPauseBtn.textContent = 'Play';
+                isPlaying = false;
+            } else {
+                socket.send(JSON.stringify({ type: 'play' }));
+                playPauseBtn.textContent = 'Pause';
+                isPlaying = true;
+            }
+        });
+        
+        timeline.addEventListener('input', (e) => {
+            const frameNumber = parseInt(e.target.value);
+            socket.send(JSON.stringify({ 
+                type: 'seek', 
+                frame_number: frameNumber 
+            }));
+        });
+        
+        playbackSpeed.addEventListener('change', (e) => {
+            socket.send(JSON.stringify({ 
+                type: 'set_speed', 
+                speed: parseFloat(e.target.value) 
+            }));
+        });
+        
+        // Initialize
+        connect();
+        initScene();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Transformation Display</title>
+    <style>
+        .container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            border: 1px solid black;
+            margin: 20px;
+        }
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            opacity: 0.75;
+            transform-origin: 0 0;
+        }
+        .controls {
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Transformation Display</h1>
+    
+    <div class="controls">
+        <button id="applyTransform">Apply Transform</button>
+        <button id="resetTransform">Reset Transform</button>
+        <label>
+            <input type="checkbox" id="showOverlay" checked> Show Overlay
+        </label>
+    </div>
+    
+    <div class="container">
+        <img id="background" class="background" src="/media/wall_images/SCR-20251020-rnyz.jpeg" alt="Background">
+        <img id="overlay" class="overlay" src="/media/svg_files/wall.svg" alt="Overlay">
+    </div>
+    
+    <script>
+        // Test transformation matrix from the calibration
+        const testTransformMatrix = [
+            [1.106121525386189, -0.17282155166460916, -11.45170854960624],
+            [-0.004636986671433364, 1.0586159753688025, -44.108708482421584],
+            [0.00018267764537615718, -0.0008171399884071077, 1.0]
+        ];
+        
+        const background = document.getElementById('background');
+        const overlay = document.getElementById('overlay');
+        const applyBtn = document.getElementById('applyTransform');
+        const resetBtn = document.getElementById('resetTransform');
+        const showCheckbox = document.getElementById('showOverlay');
+        
+        function applyTransformation() {
+            console.log('Applying transformation:', testTransformMatrix);
+            
+            // Convert 3x3 matrix to 4x4 for CSS matrix3d
+            const h11 = testTransformMatrix[0][0], h12 = testTransformMatrix[0][1], h13 = testTransformMatrix[0][2];
+            const h21 = testTransformMatrix[1][0], h22 = testTransformMatrix[1][1], h23 = testTransformMatrix[1][2];
+            const h31 = testTransformMatrix[2][0], h32 = testTransformMatrix[2][1]; // h33 = 1
+            
+            // Build 4x4 matrix for CSS matrix3d (column-major order)
+            const cssMatrix = [
+                h11, h21, 0, h31,
+                h12, h22, 0, h32,
+                0, 0, 1, 0,
+                h13, h23, 0, 1
+            ];
+            
+            console.log('CSS matrix:', cssMatrix);
+            
+            overlay.style.transform = `matrix3d(${cssMatrix.join(', ')})`;
+            overlay.style.transformOrigin = '0 0';
+            overlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+        }
+        
+        function resetTransformation() {
+            console.log('Resetting transformation');
+            overlay.style.transform = 'none';
+            overlay.style.transformOrigin = '0 0';
+        }
+        
+        function toggleOverlay() {
+            overlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+        }
+        
+        // Event listeners
+        applyBtn.addEventListener('click', applyTransformation);
+        resetBtn.addEventListener('click', resetTransformation);
+        showCheckbox.addEventListener('change', toggleOverlay);
+        
+        // Apply transformation on load
+        window.addEventListener('load', () => {
+            setTimeout(applyTransformation, 500);
+        });
+    </script>
+</body>
+</html>

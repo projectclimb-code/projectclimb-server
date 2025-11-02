@@ -546,6 +546,99 @@ async def stream_fake_pose_landmarks() -> None:
             await asyncio.sleep(5)
 
 
+class FakePoseStreamer:
+    """
+    Class-based fake pose streamer that can be imported and used by other modules.
+    Generates fake pose landmarks for testing purposes.
+    """
+    
+    def __init__(self, mode="climb", fps=30, seed=None):
+        """
+        Initialize the fake pose streamer.
+        
+        Args:
+            mode: Motion mode ("random", "sine", "walk", "idle", "climb")
+            fps: Target frames per second
+            seed: Random seed for reproducible streams
+        """
+        self.mode = mode
+        self.fps = fps
+        self.frame_index = 0
+        
+        if seed is not None:
+            random.seed(seed)
+        
+        # Initialize climb controller if needed
+        if mode == "climb":
+            global _CLIMB_CTRL
+            if _CLIMB_CTRL is None:
+                _CLIMB_CTRL = ClimbController()
+    
+    def get_frame(self):
+        """
+        Get the next frame of fake pose data.
+        
+        Returns:
+            Tuple of (frame_image, pose_data) where frame_image is None for fake streamer
+            and pose_data is a dictionary with pose landmarks.
+        """
+        # Generate fake landmarks
+        landmarks = generate_fake_landmarks(
+            frame_index=self.frame_index,
+            num_landmarks=33,
+            mode=self.mode,
+        )
+        
+        # Convert to expected format for pose touch detector
+        pose_data = {
+            'pose_landmarks': self._convert_to_pose_dict(landmarks),
+            'timestamp': time.time(),
+            'frame_number': self.frame_index
+        }
+        
+        self.frame_index += 1
+        
+        # Return None for frame image since we're not generating actual video
+        return None, pose_data
+    
+    def _convert_to_pose_dict(self, landmarks):
+        """
+        Convert MediaPipe landmark format to a simplified dictionary format.
+        
+        Args:
+            landmarks: List of landmark dictionaries from generate_fake_landmarks
+            
+        Returns:
+            Dictionary with key landmark positions
+        """
+        pose_dict = {}
+        
+        # Map landmark indices to names
+        landmark_names = {
+            0: 'nose',
+            11: 'left_shoulder',
+            12: 'right_shoulder',
+            13: 'left_elbow',
+            14: 'right_elbow',
+            15: 'left_wrist',
+            16: 'right_wrist',
+            19: 'left_index',
+            20: 'right_index',
+            23: 'left_hip',
+            24: 'right_hip',
+            25: 'left_knee',
+            26: 'right_knee',
+            27: 'left_ankle',
+            28: 'right_ankle'
+        }
+        
+        for i, landmark in enumerate(landmarks):
+            if i in landmark_names:
+                pose_dict[landmark_names[i]] = [landmark['x'], landmark['y'], landmark['z']]
+        
+        return pose_dict
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(stream_fake_pose_landmarks())

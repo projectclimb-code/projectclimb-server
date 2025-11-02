@@ -1,0 +1,703 @@
+{% extends "base.html" %}
+
+{% block title %}Manual Point Calibration - {{ wall.name }}{% endblock %}
+
+{% block content %}
+  <div class="container mx-auto px-4 py-6">
+    <div class="mb-6">
+      <nav class="flex" aria-label="Breadcrumb">
+        <ol class="flex items-center space-x-4">
+          <li><a href="{% url 'venue_list' %}" class="text-blue-600 hover:text-blue-800">Venues</a></li>
+          <li><span class="text-gray-400">/</span></li>
+          <li><a href="{% url 'venue_detail' wall.venue.uuid %}" class="text-blue-600 hover:text-blue-800">{{ wall.venue.name }}</a></li>
+          <li><span class="text-gray-400">/</span></li>
+          <li><a href="{% url 'wall_detail' wall.uuid %}" class="text-blue-600 hover:text-blue-800">{{ wall.name }}</a></li>
+          <li><span class="text-gray-400">/</span></li>
+          <li><span class="text-gray-500">Manual Point Calibration</span></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="bg-white shadow-md rounded-lg p-6">
+      <h1 class="text-2xl font-bold mb-6">Manual Point Calibration for {{ wall.name }}</h1>
+      
+      <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <h2 class="text-lg font-semibold text-blue-800 mb-2">Instructions</h2>
+        <ol class="list-decimal list-inside text-blue-700 space-y-1">
+          <li>The wall image and SVG will be preloaded from the wall model</li>
+          <li>Click 3-4 corresponding points on both the wall image and SVG</li>
+          <li>Points should be clicked in the same order on both images</li>
+          <li>3 points = affine transform, 4 points = homography (more accurate)</li>
+          <li>Click "Save Calibration" when finished</li>
+        </ol>
+      </div>
+
+      <form method="post" id="calibrationForm" enctype="multipart/form-data">
+        {% csrf_token %}
+        
+        <!-- Control Panel -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+          <div class="flex flex-wrap gap-3 items-center">
+            <button type="button" id="clearImgPts" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400">
+              Clear Image Points
+            </button>
+            <button type="button" id="clearSvgPts" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400">
+              Clear SVG Points
+            </button>
+            <button type="button" id="undoImgPt" class="px-3 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:bg-gray-400">
+              Undo Image Point
+            </button>
+            <button type="button" id="undoSvgPt" class="px-3 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:bg-gray-400">
+              Undo SVG Point
+            </button>
+            
+            <div class="border-l-2 border-gray-300 h-6 mx-2"></div>
+            
+            <label class="flex items-center">
+              <input id="forceAffine" type="checkbox" class="mr-2" />
+              <span class="text-sm">Force affine (even with 4 points)</span>
+            </label>
+            
+            <div class="border-l-2 border-gray-300 h-6 mx-2"></div>
+            
+            <label class="flex items-center">
+              <span class="text-sm mr-2">Overlay opacity:</span>
+              <input id="opacity" type="range" min="0" max="1" step="0.02" value="0.75" class="w-24" />
+              <span id="opacityValue" class="ml-2 text-sm">0.75</span>
+            </label>
+            
+            <button type="button" id="resetTransform" class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+              Reset Transform
+            </button>
+          </div>
+        </div>
+
+        <!-- Three Panel Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <!-- Image Panel -->
+          <div class="border rounded-lg overflow-hidden">
+            <div class="bg-gray-100 px-4 py-2 border-b">
+              <h3 class="font-semibold">Wall Image (click 3-4 points)</h3>
+            </div>
+            <div class="p-2 bg-gray-50">
+              <div id="imageStage" class="relative" data-img-url="{% if wall.wall_image %}{{ wall.wall_image.url|escapejs }}{% endif %}">
+                {% if wall.wall_image %}
+                  <img id="imgLeft" src="{{ wall.wall_image.url }}" alt="Wall Image" class="w-full" />
+                {% else %}
+                  <div class="text-center text-gray-500 py-20">
+                    No wall image available. Please upload a wall image first.
+                  </div>
+                {% endif %}
+                <div id="imgClick" class="absolute inset-0 cursor-crosshair" style="z-index: 5;"></div>
+                <div id="imgDots" class="absolute inset-0 pointer-events-none" style="z-index: 10;"></div>
+              </div>
+            </div>
+            <div class="px-4 py-2 bg-gray-100 text-xs text-gray-600 border-t">
+              Blue dots = image points
+            </div>
+          </div>
+
+          <!-- SVG Panel -->
+          <div class="border rounded-lg overflow-hidden">
+            <div class="bg-gray-100 px-4 py-2 border-b">
+              <h3 class="font-semibold">Wall SVG (click matching points)</h3>
+            </div>
+            <div class="p-2 bg-gray-50">
+              <div id="svgStage" class="relative" data-svg-url="{% if wall.svg_file %}{{ wall.svg_file.url|escapejs }}{% endif %}">
+                {% if wall.svg_file %}
+                  <img id="svgMiddle" src="{{ wall.svg_file.url }}" alt="Wall SVG" class="w-full" />
+                {% else %}
+                  <div class="text-center text-gray-500 py-20">
+                    No SVG file available for this wall.
+                  </div>
+                {% endif %}
+                <div id="svgClick" class="absolute inset-0 cursor-crosshair" style="z-index: 5;"></div>
+                <div id="svgDots" class="absolute inset-0 pointer-events-none" style="z-index: 10;"></div>
+              </div>
+            </div>
+            <div class="px-4 py-2 bg-gray-100 text-xs text-gray-600 border-t">
+              Pink dots = SVG points
+            </div>
+          </div>
+
+          <!-- Overlay Panel -->
+          <div class="border rounded-lg overflow-hidden">
+            <div class="bg-gray-100 px-4 py-2 border-b">
+              <h3 class="font-semibold">Overlay: SVG on Image</h3>
+            </div>
+            <div class="p-2 bg-gray-50">
+              <div id="overlayStage" class="relative overlay-stack">
+                {% if wall.wall_image %}
+                  <img id="imgOverlay" class="bg w-full" src="{{ wall.wall_image.url }}" alt="Image overlay background" />
+                {% endif %}
+                {% if wall.svg_file %}
+                  <img id="svgOverlay" class="svg-overlay absolute top-0 left-0 w-full" src="{{ wall.svg_file.url }}" alt="SVG overlay" style="opacity: 0.75; z-index: 2;" />
+                {% endif %}
+              </div>
+            </div>
+            <div class="px-4 py-2 bg-gray-100 text-xs text-gray-600 border-t">
+              Use the Fit button after picking corresponding points.
+            </div>
+          </div>
+        </div>
+        
+        <!-- Form Fields -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div>
+            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
+              Calibration Name
+            </label>
+            <input type="text" id="name" name="name" required
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value="Manual Point Calibration {{ 'now'|date:'Y-m-d H:i' }}">
+          </div>
+          
+          <div>
+            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <input type="text" id="description" name="description"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Optional description">
+          </div>
+        </div>
+        
+        <!-- Hidden fields for point data -->
+        <input type="hidden" id="imagePoints" name="image_points" value="[]">
+        <input type="hidden" id="svgPoints" name="svg_points" value="[]">
+        <input type="hidden" id="manualImageWidth" name="manual_image_width">
+        <input type="hidden" id="manualImageHeight" name="manual_image_height">
+        <input type="hidden" id="manualSvgWidth" name="manual_svg_width">
+        <input type="hidden" id="manualSvgHeight" name="manual_svg_height">
+        
+        <!-- Action Buttons -->
+        <div class="flex justify-between">
+          <a href="{% url 'wall_calibration_list' wall.id %}" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+            Cancel
+          </a>
+          <div class="space-x-3">
+            <button type="button" id="fitBtn" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400" disabled>
+              Fit (3 or 4 point pairs)
+            </button>
+            <button type="submit" id="saveCalibration" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-400" disabled>
+              Save Calibration
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  :root {
+    --dot-size: 16px;
+    --dot-border: 3px;
+  }
+  
+  .overlay-stack {
+    position: relative;
+  }
+  
+  .overlay-stack .bg {
+    position: relative;
+    z-index: 1;
+  }
+  
+  .overlay-stack .svg-overlay {
+    position: absolute;
+    left: 0; 
+    top: 0;
+    z-index: 2;
+    transform-origin: 0 0;
+    opacity: 0.75;
+    will-change: transform;
+  }
+  
+  .dot {
+    position: absolute;
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border: var(--dot-border) solid #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1;
+    z-index: 10;
+  }
+  
+  .dot-label {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  
+  .dot.img { 
+    background: #1a73e8; 
+  }
+  
+  .dot.svg { 
+    background: #e91e63; 
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Get URLs from data attributes
+  const imageStage = document.getElementById('imageStage');
+  const svgStage = document.getElementById('svgStage');
+  
+  // State
+  const state = {
+    imgURL: imageStage ? imageStage.dataset.imgUrl : null,
+    svgURL: svgStage ? svgStage.dataset.svgUrl : null,
+    imgPts: [], // [{x,y}]
+    svgPts: [], // [{x,y}]
+    lastApplied: null // 'affine' | 'homography' | null
+  };
+
+  const els = {
+    imgLeft: document.getElementById('imgLeft'),
+    svgMiddle: document.getElementById('svgMiddle'),
+    imgOverlay: document.getElementById('imgOverlay'),
+    svgOverlay: document.getElementById('svgOverlay'),
+    imgClick: document.getElementById('imgClick'),
+    svgClick: document.getElementById('svgClick'),
+    imgDots: document.getElementById('imgDots'),
+    svgDots: document.getElementById('svgDots'),
+    fitBtn: document.getElementById('fitBtn'),
+    clearImgPts: document.getElementById('clearImgPts'),
+    clearSvgPts: document.getElementById('clearSvgPts'),
+    undoImgPt: document.getElementById('undoImgPt'),
+    undoSvgPt: document.getElementById('undoSvgPt'),
+    forceAffine: document.getElementById('forceAffine'),
+    opacity: document.getElementById('opacity'),
+    opacityValue: document.getElementById('opacityValue'),
+    resetTransform: document.getElementById('resetTransform'),
+    overlayStage: document.getElementById('overlayStage'),
+    imageStage: document.getElementById('imageStage'),
+    svgStage: document.getElementById('svgStage'),
+    imagePoints: document.getElementById('imagePoints'),
+    svgPoints: document.getElementById('svgPoints'),
+    saveCalibration: document.getElementById('saveCalibration')
+  };
+  
+  // Debug: Check if elements are found
+  console.log('Elements found:', {
+    imgLeft: !!els.imgLeft,
+    svgMiddle: !!els.svgMiddle,
+    imgClick: !!els.imgClick,
+    svgClick: !!els.svgClick,
+    imgDots: !!els.imgDots,
+    svgDots: !!els.svgDots,
+    imageStage: !!els.imageStage,
+    svgStage: !!els.svgStage
+  });
+
+  // Click capture helper
+  function relativeXY(evt, container) {
+    const r = container.getBoundingClientRect();
+    const x = evt.clientX - r.left;
+    const y = evt.clientY - r.top;
+    console.log('relativeXY calculation:', {
+      containerRect: r,
+      clientX: evt.clientX,
+      clientY: evt.clientY,
+      result: { x, y }
+    });
+    return { x, y };
+  }
+
+  // Marker management
+  function renderDots(which) {
+    console.log(`renderDots called for ${which}`);
+    const dotsLayer = which === 'img' ? els.imgDots : els.svgDots;
+    console.log(`dotsLayer:`, dotsLayer);
+    dotsLayer.innerHTML = '';
+    const pts = which === 'img' ? state.imgPts : state.svgPts;
+    console.log(`Points to render:`, pts);
+    pts.forEach((p, i) => {
+      const dot = document.createElement('div');
+      dot.className = 'dot ' + (which === 'img' ? 'img' : 'svg');
+      dot.style.position = 'absolute';
+      dot.style.left = p.x + 'px';
+      dot.style.top = p.y + 'px';
+      dot.style.width = 'var(--dot-size)';
+      dot.style.height = 'var(--dot-size)';
+      console.log(`Creating dot at (${p.x}, ${p.y}) with size ${getComputedStyle(document.documentElement).getPropertyValue('--dot-size')}`);
+      const label = document.createElement('div');
+      label.className = 'dot-label';
+      label.textContent = String(i + 1);
+      label.style.fontSize = '12px';
+      label.style.fontWeight = 'bold';
+      dot.appendChild(label);
+      dotsLayer.appendChild(dot);
+      console.log(`Dot appended to layer, final styles:`, {
+        position: dot.style.position,
+        left: dot.style.left,
+        top: dot.style.top,
+        width: dot.style.width,
+        height: dot.style.height,
+        zIndex: dot.style.zIndex,
+        dotsLayerChildren: dotsLayer.children.length
+      });
+      
+      // Force a reflow to ensure the dot is visible
+      dot.offsetHeight;
+    });
+    console.log(`renderDots completed for ${which}, total dots in layer: ${dotsLayer.children.length}`);
+    updateFitButton();
+  }
+
+  function clearPoints(which) {
+    if (which === 'img' || which === 'both') {
+      state.imgPts = [];
+      renderDots('img');
+    }
+    if (which === 'svg' || which === 'both') {
+      state.svgPts = [];
+      renderDots('svg');
+    }
+  }
+
+  function undoPoint(which) {
+    if (which === 'img') {
+      state.imgPts.pop();
+      renderDots('img');
+    } else {
+      state.svgPts.pop();
+      renderDots('svg');
+    }
+  }
+
+  // Enable fit button only when counts match and are 3 or 4
+  function updateFitButton() {
+    const n = state.imgPts.length;
+    const m = state.svgPts.length;
+    const ok = (n === m) && (n === 3 || n === 4);
+    els.fitBtn.disabled = !ok || !state.imgURL || !state.svgURL;
+    els.saveCalibration.disabled = !ok || !state.imgURL || !state.svgURL;
+  }
+
+  // Click listeners
+  els.imgClick.addEventListener('click', (e) => {
+    console.log('Image click detected');
+    if (!els.imgLeft || !els.imgLeft.complete) {
+      console.log('Image not loaded or complete');
+      return;
+    }
+    const p = relativeXY(e, els.imageStage);
+    console.log('Image point:', p);
+    state.imgPts.push(p);
+    console.log('Image points after push:', state.imgPts);
+    renderDots('img');
+  });
+
+  els.svgClick.addEventListener('click', (e) => {
+    console.log('SVG click detected');
+    if (!els.svgMiddle || !els.svgMiddle.complete) {
+      console.log('SVG not loaded or complete');
+      return;
+    }
+    const p = relativeXY(e, els.svgStage);
+    console.log('SVG point:', p);
+    state.svgPts.push(p);
+    console.log('SVG points after push:', state.svgPts);
+    renderDots('svg');
+  });
+
+  // Buttons
+  els.clearImgPts.addEventListener('click', () => clearPoints('img'));
+  els.clearSvgPts.addEventListener('click', () => clearPoints('svg'));
+  els.undoImgPt.addEventListener('click', () => undoPoint('img'));
+  els.undoSvgPt.addEventListener('click', () => undoPoint('svg'));
+  
+  els.opacity.addEventListener('input', () => {
+    els.svgOverlay.style.opacity = els.opacity.value;
+    els.opacityValue.textContent = els.opacity.value;
+  });
+  
+  els.resetTransform.addEventListener('click', resetOverlayTransform);
+
+  function resetOverlayTransform() {
+    els.svgOverlay.style.transform = 'none';
+    els.svgOverlay.style.transformOrigin = '0 0';
+    els.svgOverlay.style.opacity = els.opacity.value;
+    state.lastApplied = null;
+  }
+
+  // Linear algebra helpers
+  // Solve A x = b for square A using Gaussian elimination (small n)
+  function solveLinear(A, b) {
+    const n = A.length;
+    // Augment matrix
+    for (let i = 0; i < n; i++) {
+      A[i] = A[i].slice();
+      A[i].push(b[i]);
+    }
+    // Forward elimination
+    for (let i = 0; i < n; i++) {
+      // Pivot
+      let maxRow = i;
+      for (let r = i + 1; r < n; r++) {
+        if (Math.abs(A[r][i]) > Math.abs(A[maxRow][i])) maxRow = r;
+      }
+      if (Math.abs(A[maxRow][i]) < 1e-12) throw new Error('Singular matrix');
+      if (maxRow !== i) {
+        const tmp = A[i]; A[i] = A[maxRow]; A[maxRow] = tmp;
+      }
+      // Normalize row i
+      const pivot = A[i][i];
+      for (let c = i; c <= n; c++) A[i][c] /= pivot;
+      // Eliminate others
+      for (let r = 0; r < n; r++) {
+        if (r === i) continue;
+        const f = A[r][i];
+        if (Math.abs(f) < 1e-20) continue;
+        for (let c = i; c <= n; c++) A[r][c] -= f * A[i][c];
+      }
+    }
+    // Extract solution
+    const x = new Array(n);
+    for (let i = 0; i < n; i++) x[i] = A[i][n];
+    return x;
+  }
+
+  // Least-squares affine from src->dst. Accepts 3 or 4 pairs.
+  function computeAffine(srcPts, dstPts) {
+    const n = srcPts.length;
+    if (n < 3) throw new Error('Need at least 3 points for affine');
+
+    // Build normal equations: (M^T M) p = M^T b
+    // For each i: [xi yi 1 0  0  0] [a b c d e f]^T ~= Xi
+    //             [0  0  0 xi yi 1]                    Yi
+    const rows = 2 * n;
+    const M = Array.from({length: rows}, () => Array(6).fill(0));
+    const b = new Array(rows);
+
+    for (let i = 0; i < n; i++) {
+      const {x, y} = srcPts[i];
+      const {x: X, y: Y} = dstPts[i];
+      const r = 2 * i;
+      M[r][0] = x; M[r][1] = y; M[r][2] = 1; M[r][3] = 0; M[r][4] = 0; M[r][5] = 0;
+      b[r] = X;
+      M[r+1][0] = 0; M[r+1][1] = 0; M[r+1][2] = 0; M[r+1][3] = x; M[r+1][4] = y; M[r+1][5] = 1;
+      b[r+1] = Y;
+    }
+
+    // Compute M^T M and M^T b
+    const MTM = Array.from({length: 6}, () => Array(6).fill(0));
+    const MTb = new Array(6).fill(0);
+    for (let r = 0; r < rows; r++) {
+      for (let i = 0; i < 6; i++) {
+        MTb[i] += M[r][i] * b[r];
+        for (let j = 0; j < 6; j++) {
+          MTM[i][j] += M[r][i] * M[r][j];
+        }
+      }
+    }
+
+    const p = solveLinear(MTM, MTb); // [a, b, e, c, d, f] careful mapping set above
+    // We constructed coefficients as [a,b,e, c,d,f] by block rows. Map to standard:
+    const a = p[0], c = p[1], e = p[2], b_ = p[3], d = p[4], f = p[5];
+    // Note: mapping is:
+    // X = a*x + c*y + e
+    // Y = b_*x + d*y + f
+    return { a, b: b_, c, d, e, f };
+  }
+
+  // Homography from 4 correspondences (src->dst). Fix h33=1 and solve 8x8.
+  function computeHomography4(srcPts, dstPts) {
+    if (srcPts.length !== 4) throw new Error('Need 4 points for homography');
+    const A = [];
+    const b = [];
+    for (let i = 0; i < 4; i++) {
+      const x = srcPts[i].x, y = srcPts[i].y;
+      const X = dstPts[i].x, Y = dstPts[i].y;
+      // Equations:
+      // x h11 + y h12 + h13 - x X h31 - y X h32 = X
+      // x h21 + y h22 + h23 - x Y h31 - y Y h32 = Y
+      // Unknowns: [h11, h12, h13, h21, h22, h23, h31, h32]
+      A.push([x, y, 1, 0, 0, 0, -x*X, -y*X]);
+      b.push(X);
+      A.push([0, 0, 0, x, y, 1, -x*Y, -y*Y]);
+      b.push(Y);
+    }
+    const h = solveLinear(A, b); // 8x1
+    const H = [
+      [h[0], h[1], h[2]],
+      [h[3], h[4], h[5]],
+      [h[6], h[7], 1   ]
+    ];
+    return H;
+  }
+
+  // Apply affine to the overlay SVG image
+  function applyAffineToOverlay({a, b, c, d, e, f}) {
+    els.svgOverlay.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${e}, ${f})`;
+    els.svgOverlay.style.transformOrigin = '0 0';
+    state.lastApplied = 'affine';
+  }
+
+  // Apply homography via CSS matrix3d
+  function applyHomographyToOverlay(H) {
+    // H =
+    // [ h11 h12 h13
+    //   h21 h22 h23
+    //   h31 h32 h33 ] with h33=1
+    const h11 = H[0][0], h12 = H[0][1], h13 = H[0][2];
+    const h21 = H[1][0], h22 = H[1][1], h23 = H[1][2];
+    const h31 = H[2][0], h32 = H[2][1]; // H[2][2]=1
+
+    // Build 4x4 M that implements 2D homography on z=0 plane:
+    // Row-major:
+    // [ h11 h12 0 h13
+    //   h21 h22 0 h23
+    //   0   0   1 0
+    //   h31 h32 0 1 ]
+    // CSS matrix3d expects column-major argument order:
+    const css = [
+      h11, h21, 0,   h31,   // col 1
+      h12, h22, 0,   h32,   // col 2
+      0,   0,   1,   0,     // col 3
+      h13, h23, 0,   1      // col 4
+    ];
+    els.svgOverlay.style.transform = `matrix3d(${css.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
+    els.svgOverlay.style.transformOrigin = '0 0';
+    state.lastApplied = 'homography';
+  }
+
+  // Fit button logic
+  els.fitBtn.addEventListener('click', () => {
+    const n = state.imgPts.length;
+    if (n !== state.svgPts.length || (n !== 3 && n !== 4)) return;
+
+    try {
+      console.log('Applying transformation with points:');
+      console.log('SVG points:', state.svgPts);
+      console.log('Image points:', state.imgPts);
+      
+      if (n === 3 || (n === 4 && els.forceAffine.checked)) {
+        const aff = computeAffine(state.svgPts, state.imgPts);
+        console.log('Computed affine transform:', aff);
+        applyAffineToOverlay(aff);
+      } else if (n === 4) {
+        const H = computeHomography4(state.svgPts, state.imgPts);
+        console.log('Computed homography transform:', H);
+        applyHomographyToOverlay(H);
+      }
+      
+      console.log('Transform applied successfully');
+    } catch (err) {
+      console.error('Fit failed:', err);
+      alert('Fit failed: ' + (err?.message || err));
+    }
+  });
+
+  // Initialize
+  if (els.svgOverlay) {
+    els.svgOverlay.style.opacity = els.opacity.value;
+  }
+
+  // Enable fit button on image/SVG load
+  function maybeEnableFitWhenLoaded() {
+    const ready = els.imgLeft && els.imgLeft.complete && els.svgMiddle && els.svgMiddle.complete;
+    console.log('Images loaded check:', {
+      imgLeft: !!els.imgLeft,
+      imgComplete: els.imgLeft && els.imgLeft.complete,
+      svgMiddle: !!els.svgMiddle,
+      svgComplete: els.svgMiddle && els.svgMiddle.complete,
+      ready: ready
+    });
+    updateFitButton();
+  }
+  
+  if (els.imgLeft) {
+    els.imgLeft.addEventListener('load', maybeEnableFitWhenLoaded);
+    console.log('Image load listener attached');
+  }
+  if (els.svgMiddle) {
+    els.svgMiddle.addEventListener('load', maybeEnableFitWhenLoaded);
+    console.log('SVG load listener attached');
+  }
+  
+  // Check if images are already loaded
+  setTimeout(() => {
+    console.log('Checking image load status after timeout...');
+    console.log('Container dimensions:', {
+      imageStage: els.imageStage ? els.imageStage.getBoundingClientRect() : null,
+      svgStage: els.svgStage ? els.svgStage.getBoundingClientRect() : null
+    });
+    console.log('Click layers dimensions:', {
+      imgClick: els.imgClick ? els.imgClick.getBoundingClientRect() : null,
+      svgClick: els.svgClick ? els.svgClick.getBoundingClientRect() : null,
+      imgDots: els.imgDots ? els.imgDots.getBoundingClientRect() : null,
+      svgDots: els.svgDots ? els.svgDots.getBoundingClientRect() : null
+    });
+    maybeEnableFitWhenLoaded();
+  }, 1000);
+  
+  // Handle form submission
+  document.getElementById('calibrationForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    // Update hidden fields with current point data
+    els.imagePoints.value = JSON.stringify(state.imgPts.map(p => [p.x, p.y]));
+    els.svgPoints.value = JSON.stringify(state.svgPts.map(p => [p.x, p.y]));
+
+    // Also update the hidden fields with the dimensions
+    const imageRect = els.imageStage.getBoundingClientRect();
+    const svgRect = els.svgStage.getBoundingClientRect();
+    document.getElementById('manualImageWidth').value = imageRect.width;
+    document.getElementById('manualImageHeight').value = imageRect.height;
+    document.getElementById('manualSvgWidth').value = svgRect.width;
+    document.getElementById('manualSvgHeight').value = svgRect.height;
+    
+    // Submit form using fetch API
+    const formData = new FormData(this);
+    
+    fetch(window.location.href, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      }
+    })
+    .then(response => {
+      if (response.ok) {
+        return response.json();
+      }
+      throw new Error('Network response was not ok');
+    })
+    .then(data => {
+      if (data.success) {
+        // Redirect to calibration detail page
+        window.location.href = data.redirect_url || `{% url 'wall_calibration_list' wall.id %}`;
+      } else {
+        // Show error message
+        alert('Error saving calibration: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('Error saving calibration. Please try again.');
+    });
+  });
+});
+</script>
+{% endblock %}

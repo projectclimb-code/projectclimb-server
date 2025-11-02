@@ -1,0 +1,40 @@
+# go2rtc configuration file
+
+# Log settings
+log:
+  level: info  # debug, info, warn, error
+  out: stdout  # stdout, stderr, or file path
+
+# API settings
+api:
+  listen: ":1984"
+
+# RTSP server settings
+rtsp:
+  listen: ":8554"
+
+# WebRTC settings (if needed)
+webrtc:
+  ice_servers:
+    - urls: [stun:stun.l.google.com:19302]
+
+# Streams configuration
+streams:
+  # USB camera or MacBook built-in camera (Linux/macOS)
+  camera:
+    - ffmpeg:video=/dev/video0
+    - ffmpeg:/dev/video0
+    # For macOS, you might also need:
+    # - ffmpeg:video=default
+    # - avfoundation:default
+    
+  # Alternative configurations for different systems
+  # For macOS (using built-in camera):
+  # mac_camera:
+  #   - avfoundation:0
+  #   - ffmpeg:video="FaceTime HD Camera"
+    
+  # For Linux USB camera:
+  # usb_camera:
+  #   - v4l2:/dev/video0
+  #   - ffmpeg:/dev/video0

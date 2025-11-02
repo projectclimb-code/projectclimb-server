@@ -1,16 +1,21 @@
-from django.shortcuts import render, get_object_or_404 # Ensure get_object_or_404 is imported
+from django.shortcuts import render, get_object_or_404, redirect # Ensure get_object_or_404 is imported
 from django.views.generic import TemplateView, ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
-from django.http import HttpResponse, Http404 # Added for HTMX responses and Http404
+from django.http import HttpResponse, Http404, JsonResponse # Added for HTMX responses and Http404
 from django.utils.translation import gettext_lazy as _ # For Http404 message
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+from django.contrib import messages
 from rest_framework import viewsets
-from .models import Group, AppUser, Venue, Wall, Hold, Route, RoutePoint # Import all models
+from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame # Import all models
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
-from django.contrib.auth.models import User 
+from django.contrib.auth.models import User
+from .tasks import send_fake_session_data_task
 
 from .serializers import (
     GroupSerializer, AppUserSerializer, VenueSerializer, WallSerializer,
-    HoldSerializer, RouteSerializer, RoutePointSerializer
+    HoldSerializer, RouteSerializer, SessionSerializer,
+    SessionRecordingSerializer, SessionFrameSerializer
 )
 
 # DRF ViewSets
@@ -38,9 +43,44 @@ class RouteViewSet(viewsets.ModelViewSet):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
 
-class RoutePointViewSet(viewsets.ModelViewSet):
-    queryset = RoutePoint.objects.all()
-    serializer_class = RoutePointSerializer
+
+class SessionViewSet(viewsets.ModelViewSet):
+    queryset = Session.objects.all()
+    serializer_class = SessionSerializer
+    
+    def get_queryset(self):
+        # Filter by current user, handle anonymous users
+        if self.request.user.is_anonymous:
+            return Session.objects.none()
+        return Session.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        # Handle anonymous users - don't allow creation
+        if not self.request.user.is_anonymous:
+            serializer.save(user=self.request.user)
+
+class PhoneCameraView(TemplateView):
+    """View for phone camera page."""
+    template_name = 'climber/phone_camera.html'
+
+class WebSocketRelayTestView(TemplateView):
+    """View for WebSocket relay test page."""
+    template_name = 'climber/websocket_relay_test.html'
+
+class SessionRecordingViewSet(viewsets.ModelViewSet):
+    queryset = SessionRecording.objects.all()
+    serializer_class = SessionRecordingSerializer
+    
+    def get_queryset(self):
+        # Filter by current user, handle anonymous users
+        if self.request.user.is_anonymous:
+            return SessionRecording.objects.none()
+        return SessionRecording.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        # Handle anonymous users - don't allow creation
+        if not self.request.user.is_anonymous:
+            serializer.save(user=self.request.user)
 
 # Template Views
 class HomePageView(TemplateView):
@@ -54,7 +94,6 @@ class HomePageView(TemplateView):
         context['wall_count'] = Wall.objects.count()
         context['hold_count'] = Hold.objects.count()
         context['route_count'] = Route.objects.count()
-        context['routepoint_count'] = RoutePoint.objects.count()
         return context
 
 class UUIDLookupMixin:
@@ -290,6 +329,141 @@ class WallDeleteView(UUIDLookupMixin, DeleteView):
             return response
         return super().form_valid(form)
 
+
+#@login_required
+@require_POST
+def wall_upload_svg(request, pk):
+    """Upload SVG file for a wall."""
+    wall = get_object_or_404(Wall, uuid=pk)
+    
+    if 'svg_file' not in request.FILES:
+        messages.error(request, 'Please select an SVG file to upload.')
+        return redirect('wall_detail', pk=wall.uuid)
+    
+    svg_file = request.FILES['svg_file']
+    
+    # Validate file type
+    if not svg_file.name.lower().endswith('.svg'):
+        messages.error(request, 'Please upload a valid SVG file.')
+        return redirect('wall_detail', pk=wall.uuid)
+    
+    try:
+        # Save the SVG file
+        wall.svg_file = svg_file
+        wall.save()
+        
+        messages.success(request, f'SVG file "{svg_file.name}" uploaded successfully!')
+        
+    except Exception as e:
+        messages.error(request, f'Error uploading SVG file: {str(e)}')
+    
+    return redirect('wall_detail', pk=wall.uuid)
+
+
+#@login_required
+@require_POST
+def wall_upload_image(request, pk):
+    """Upload wall image with drag and drop support"""
+    wall = get_object_or_404(Wall, uuid=pk)
+    
+    # Check for both field names to handle different form submissions
+    if 'wall_image' in request.FILES:
+        image_file = request.FILES['wall_image']
+    elif 'image_file' in request.FILES:
+        image_file = request.FILES['image_file']
+    else:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'error': 'Please select an image to upload.'})
+        messages.error(request, 'Please select an image to upload.')
+        return redirect('wall_detail', pk=wall.uuid)
+    
+    # Validate file type
+    allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if image_file.content_type not in allowed_types:
+        error_msg = 'Please upload a valid image file (JPEG, PNG, or WebP).'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'error': error_msg})
+        messages.error(request, error_msg)
+        return redirect('wall_detail', pk=wall.uuid)
+    
+    try:
+        # Save the image
+        wall.wall_image = image_file
+        wall.save()
+        
+        success_msg = f'Wall image "{image_file.name}" uploaded successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': success_msg})
+        messages.success(request, success_msg)
+        return redirect('wall_detail', pk=wall.uuid)
+        
+    except Exception as e:
+        error_msg = f'Error uploading image: {str(e)}'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'error': error_msg})
+        messages.error(request, error_msg)
+        return redirect('wall_detail', pk=wall.uuid)
+
+
+#@login_required
+def wall_capture_camera_image(request, pk):
+    """Capture image from camera and save as wall image"""
+    wall = get_object_or_404(Wall, uuid=pk)
+    
+    if request.method == 'POST':
+        try:
+            # Get image data from request
+            image_data = request.POST.get('image_data')
+            if not image_data:
+                messages.error(request, 'No image data received from camera.')
+                return JsonResponse({'success': False, 'error': 'No image data received'})
+            
+            # Decode base64 image
+            import base64
+            from django.core.files.base import ContentFile
+            import io
+            from PIL import Image
+            
+            # Remove data URL prefix if present
+            if 'data:image/' in image_data:
+                # Find the comma separating metadata from the actual data
+                comma_pos = image_data.find(',')
+                if comma_pos != -1:
+                    image_data = image_data[comma_pos + 1:]
+            
+            # Decode base64
+            try:
+                image_bytes = base64.b64decode(image_data)
+                image = Image.open(io.BytesIO(image_bytes))
+                
+                # Convert to RGB if necessary
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                # Save to ContentFile
+                image_io = io.BytesIO()
+                image.save(image_io, format='JPEG', quality=85)
+                image_file = ContentFile(image_io.getvalue(), name=f'camera_capture_{wall.uuid}.jpg')
+                
+                # Save to wall model
+                wall.wall_image = image_file
+                wall.save()
+                
+                messages.success(request, 'Camera image captured and saved successfully!')
+                return JsonResponse({'success': True, 'message': 'Image saved successfully'})
+                
+            except Exception as e:
+                messages.error(request, f'Error processing camera image: {str(e)}')
+                return JsonResponse({'success': False, 'error': str(e)})
+                
+        except Exception as e:
+            messages.error(request, f'Error saving camera image: {str(e)}')
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    # For GET requests, just return error
+    return JsonResponse({'success': False, 'error': 'Only POST requests are supported'})
+
+
 # Hold CRUD Views
 class HoldListView(ListView):
     model = Hold
@@ -394,57 +568,34 @@ class RouteDeleteView(UUIDLookupMixin, DeleteView):
             return response
         return super().form_valid(form)
 
-# RoutePoint CRUD Views
-class RoutePointListView(ListView):
-    model = RoutePoint
-    template_name = 'climber/routepoint_list.html'
-    context_object_name = 'routepoints'
 
-class RoutePointDetailView(DetailView):
-    model = RoutePoint
-    template_name = 'climber/routepoint_detail.html'
-    context_object_name = 'routepoint'
 
-class RoutePointCreateView(CreateView):
-    model = RoutePoint
-    template_name = 'climber/routepoint_form.html'
-    fields = ['route', 'hold', 'order'] # Fields for RoutePoint
-    success_url = reverse_lazy('routepoint_list')
+# Session Recording Views
+class SessionListView(ListView):
+    model = SessionRecording
+    template_name = 'climber/session_list.html'
+    context_object_name = 'sessions'
+    
+    def get_queryset(self):
+        # Handle anonymous users - return empty queryset for now
+        if self.request.user.is_anonymous:
+            return SessionRecording.objects.none()
+        return SessionRecording.objects.filter(user=self.request.user)
 
-    def form_valid(self, form):
-        if self.request.htmx:
-            self.object = form.save()
-            response = HttpResponse()
-            response['HX-Redirect'] = self.get_success_url()
-            return response
-        return super().form_valid(form)
+class SessionDetailView(UUIDLookupMixin, DetailView):
+    model = SessionRecording
+    template_name = 'climber/session_detail.html'
+    context_object_name = 'session'
 
-class RoutePointUpdateView(UpdateView):
-    model = RoutePoint
-    template_name = 'climber/routepoint_form.html'
-    fields = ['route', 'hold', 'order']
-    success_url = reverse_lazy('routepoint_list')
+class SessionDeleteView(UUIDLookupMixin, DeleteView):
+    model = SessionRecording
+    template_name = 'climber/session_confirm_delete.html'
+    success_url = reverse_lazy('session_list')
 
-    def form_valid(self, form):
-        if self.request.htmx:
-            self.object = form.save()
-            response = HttpResponse()
-            response['HX-Redirect'] = self.get_success_url()
-            return response
-        return super().form_valid(form)
-
-class RoutePointDeleteView(DeleteView):
-    model = RoutePoint
-    template_name = 'climber/routepoint_confirm_delete.html'
-    success_url = reverse_lazy('routepoint_list')
-
-    def form_valid(self, form):
-        if self.request.htmx:
-            self.object.delete()
-            response = HttpResponse()
-            response['HX-Redirect'] = self.get_success_url()
-            return response
-        return super().form_valid(form)
+class SessionReplayView(UUIDLookupMixin, DetailView):
+    model = SessionRecording
+    template_name = 'climber/session_replay.html'
+    context_object_name = 'session'
 
 
 class PoseRealtimeView(TemplateView):
@@ -453,6 +604,16 @@ class PoseRealtimeView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['fullscreen'] = self.request.GET.get('fullscreen', 'false').lower() == 'true'
+        return context
+
+
+class PoseSkeletonView(TemplateView):
+    """View for displaying pose skeleton from custom WebSocket."""
+    template_name = 'climber/pose_skeleton.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['websocket_url'] = self.request.GET.get('ws_url', 'ws://localhost:8000/ws/pose/')
         return context
 
 
@@ -467,8 +628,15 @@ class CameraView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         stream_url = self.request.GET.get('stream_url')
+        
+        # Default to go2rtc stream if no external URL is provided
+        if not stream_url:
+            stream_url = "http://localhost:1984/stream.mp4?src=camera"
+        
         context['stream_url'] = stream_url
         context['local_stream_url'] = reverse_lazy('video_feed')
+        context['go2rtc_stream_url'] = "http://localhost:1984/stream.mp4?src=camera"
+        context['go2rtc_api_url'] = "http://localhost:1984/api/info"
         return context
 
 import asyncio
@@ -539,3 +707,85 @@ def video_feed(request):
 # HTMX example view
 def check_username(request):
     username = request.POST.get('username')
+
+
+# Task Management Views
+class TaskManagementView(TemplateView):
+    """View for managing Celery tasks, including the fake session data task."""
+    template_name = 'climber/task_management.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Add any context data needed for the task management page
+        return context
+
+
+#@login_required
+@require_POST
+def trigger_fake_session_task(request):
+    """Trigger the fake session data task via Celery."""
+    try:
+        # Get parameters from the request
+        session_id = request.POST.get('session_id')
+        ws_url = request.POST.get('ws_url', 'ws://localhost:8000/ws/session-live/')
+        duration = int(request.POST.get('duration', 60))
+        create_session = request.POST.get('create_session') == 'on'
+        
+        # Trigger the Celery task
+        task = send_fake_session_data_task.delay(
+            session_id=session_id,
+            ws_url=ws_url,
+            duration=duration,
+            create_session=create_session
+        )
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Task started successfully with ID: {task.id}',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+#@login_required
+def get_task_status(request, task_id):
+    """Get the status of a Celery task."""
+    try:
+        from celery.result import AsyncResult
+        
+        task = AsyncResult(task_id)
+        
+        response_data = {
+            'task_id': task_id,
+            'status': task.status,
+            'result': task.result
+        }
+        
+        # Add progress information if available
+        if task.status == 'PROGRESS' and isinstance(task.result, dict):
+            response_data.update(task.result)
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+class WallAnimationView(UUIDLookupMixin, DetailView):
+    """View for displaying animated wall with random objects."""
+    model = Wall
+    template_name = 'climber/wall_animation.html'
+    context_object_name = 'wall'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Add any additional context needed for the animation
+        return context

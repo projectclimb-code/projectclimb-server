@@ -13,3 +13,8 @@ http://paperjs.org/
 
 https://projektplezanje.atlassian.net/
 
+
+
+api endpoint to start new session
+api endopint for session info
+

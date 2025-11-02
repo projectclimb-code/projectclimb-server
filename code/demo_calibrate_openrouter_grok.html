@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Calibration with SVG</title>
+    <style>
+        #container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            border: 1px solid black;
+        }
+        #image {
+            width: 100%;
+            height: 100%;
+        }
+        #svgOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allow clicks to pass through except for draggable elements */
+        }
+        circle {
+            pointer-events: all; /* Make circles draggable */
+            cursor: move;
+        }
+        #computeButton {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <img id="image" src="http://localhost:8001/media/wall_images/SCR-20251020-rnyz.jpeg" alt="PNG Image">
+        <svg id="svgOverlay" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+            <!-- Initial quadrilateral lines -->
+            <polyline id="quad" points="100,100 700,100 700,500 100,500" fill="none" stroke="blue" stroke-width="2" />
+            <!-- Draggable corners (red circles) -->
+            <circle id="corner0" cx="100" cy="100" r="10" fill="red" />
+            <circle id="corner1" cx="700" cy="100" r="10" fill="red" />
+            <circle id="corner2" cx="700" cy="500" r="10" fill="red" />
+            <circle id="corner3" cx="100" cy="500" r="10" fill="red" />
+        </svg>
+    </div>
+    <button id="computeButton">Compute Transformation</button>
+
+    <script>
+        // Fixed SVG logical coordinates (target points)
+        const svgPoints = [
+            [0, 0],   // Top-left
+            [100, 0], // Top-right
+            [100, 100], // Bottom-right
+            [0, 100]  // Bottom-left
+        ];
+
+        // Get draggable corners
+        const corners = [
+            document.getElementById('corner0'),
+            document.getElementById('corner1'),
+            document.getElementById('corner2'),
+            document.getElementById('corner3')
+        ];
+
+        // Make corners draggable
+        let selectedCorner = null;
+        corners.forEach((corner, index) => {
+            corner.addEventListener('mousedown', (e) => {
+                selectedCorner = corner;
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (selectedCorner) {
+                const svg = document.getElementById('svgOverlay');
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                selectedCorner.setAttribute('cx', x);
+                selectedCorner.setAttribute('cy', y);
+                updateQuad();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            selectedCorner = null;
+        });
+
+        // Update the quadrilateral lines when dragging
+        function updateQuad() {
+            const points = corners.map(c => `${c.getAttribute('cx')},${c.getAttribute('cy')}`).join(' ');
+            document.getElementById('quad').setAttribute('points', points + ' ' + corners[0].getAttribute('cx') + ',' + corners[0].getAttribute('cy'));
+        }
+
+        // Compute button handler
+        document.getElementById('computeButton').addEventListener('click', () => {
+            // Get current PNG positions (source points)
+            const pngPoints = corners.map(c => [
+                parseFloat(c.getAttribute('cx')),
+                parseFloat(c.getAttribute('cy'))
+            ]);
+
+            // Compute homography matrix
+            const H = computeHomography(pngPoints, svgPoints);
+
+            console.log('Transformation Matrix (3x3 Homography):');
+            console.log(H);
+
+            // Example: Transform a test point from PNG to SVG
+            const testPngPoint = [400, 300]; // Example midpoint of image
+            const transformed = transformPoint(testPngPoint[0], testPngPoint[1], H);
+            alert(`Transformation Matrix computed (see console).\nExample: PNG (${testPngPoint}) -> SVG (${transformed})`);
+
+            // You can now use transformPoint(x, y, H) for any translations
+        });
+
+        // Function to compute 3x3 homography matrix using DLT (Direct Linear Transformation)
+        // Assumes exactly 4 point correspondences: srcPoints -> dstPoints
+        function computeHomography(srcPoints, dstPoints) {
+            // Build the A matrix (8 equations for 4 points)
+            const A = [];
+            for (let i = 0; i < 4; i++) {
+                const [x, y] = srcPoints[i];
+                const [xp, yp] = dstPoints[i];
+                A.push([x, y, 1, 0, 0, 0, -xp * x, -xp * y, -xp]);
+                A.push([0, 0, 0, x, y, 1, -yp * x, -yp * y, -yp]);
+            }
+
+            // Solve A * h = 0 using Gaussian elimination (for null space)
+            const h = solveLinearSystem(A);
+
+            // Reshape to 3x3 matrix and normalize (h[8] = 1)
+            return [
+                [h[0], h[1], h[2]],
+                [h[3], h[4], h[5]],
+                [h[6], h[7], 1]  // Normalized
+            ];
+        }
+
+        // Simple Gaussian elimination to find null space (for homography)
+        function solveLinearSystem(A) {
+            const rows = A.length;
+            const cols = A[0].length;
+            // Augment with zero vector (for A*h=0)
+            for (let i = 0; i < rows; i++) A[i].push(0);
+
+            // Gaussian elimination
+            for (let i = 0; i < rows; i++) {
+                // Pivot
+                let pivot = i;
+                for (let j = i + 1; j < rows; j++) {
+                    if (Math.abs(A[j][i]) > Math.abs(A[pivot][i])) pivot = j;
+                }
+                [A[i], A[pivot]] = [A[pivot], A[i]];
+
+                // Eliminate
+                for (let j = i + 1; j < rows; j++) {
+                    const factor = A[j][i] / A[i][i];
+                    for (let k = i; k <= cols; k++) {
+                        A[j][k] -= factor * A[i][k];
+                    }
+                }
+            }
+
+            // Back-substitution (find null space, assume rank 8, h9=1)
+            const h = new Array(cols - 1).fill(0);
+            for (let i = rows - 1; i >= 0; i--) {
+                let sum = 0;
+                for (let j = i + 1; j < cols - 1; j++) {
+                    sum += A[i][j] * h[j];
+                }
+                h[i] = (A[i][cols] - sum) / A[i][i];
+            }
+            h.push(1); // h9 = 1
+            return h.slice(0, 8); // Return first 8 elements
+        }
+
+        // Function to transform a point (x, y) from PNG to SVG using the matrix H
+        function transformPoint(x, y, H) {
+            const src = [x, y, 1];
+            const dst = [
+                H[0][0] * src[0] + H[0][1] * src[1] + H[0][2] * src[2],
+                H[1][0] * src[0] + H[1][1] * src[1] + H[1][2] * src[2],
+                H[2][0] * src[0] + H[2][1] * src[1] + H[2][2] * src[2]
+            ];
+            return [dst[0] / dst[2], dst[1] / dst[2]]; // Normalize by w
+        }
+    </script>
+</body>
+</html>

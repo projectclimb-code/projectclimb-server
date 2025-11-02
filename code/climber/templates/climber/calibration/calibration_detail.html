@@ -1,0 +1,726 @@
+{% extends "base.html" %}
+{% load static %}
+{% load calibration_filters %}
+
+{% block title %}{{ calibration.name }} - {{ wall.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">{{ calibration.name }}</h1>
+        <div class="space-x-4">
+            <a href="{% url 'wall_calibration_list' wall.pk %}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                Back to Calibrations
+            </a>
+            <a href="{% url 'calibration_create' wall.pk %}" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                Create New
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Calibration Details -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Calibration Details</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <span class="font-medium">Wall:</span>
+                    <a href="{% url 'wall_detail' wall.uuid %}" class="text-blue-600 hover:text-blue-900 ml-2">
+                        {{ wall.name }}
+                    </a>
+                </div>
+                
+                <div>
+                    <span class="font-medium">Status:</span>
+                    {% if calibration.is_active %}
+                        <span class="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            Active
+                        </span>
+                    {% else %}
+                        <span class="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                            Inactive
+                        </span>
+                    {% endif %}
+                </div>
+                
+                <div>
+                    <span class="font-medium">Created:</span>
+                    <span class="ml-2">{{ calibration.created|date:"Y-m-d H:i:s" }}</span>
+                </div>
+                
+                <div>
+                    <span class="font-medium">Reprojection Error:</span>
+                    <span class="ml-2">
+                        {% if calibration.reprojection_error %}
+                            {{ calibration.reprojection_error|floatformat:2 }} pixels
+                        {% else %}
+                            Not calculated
+                        {% endif %}
+                    </span>
+                </div>
+                
+                <div>
+                    <span class="font-medium">ArUco Dictionary:</span>
+                    <span class="ml-2">{{ calibration.aruco_dictionary }}</span>
+                </div>
+                
+                <div>
+                    <span class="font-medium">Marker Size:</span>
+                    <span class="ml-2">{{ calibration.marker_size_meters }} meters</span>
+                </div>
+                
+                {% if calibration.description %}
+                <div>
+                    <span class="font-medium">Description:</span>
+                    <p class="mt-2 text-gray-600">{{ calibration.description }}</p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Calibration Image -->
+            {% if calibration.calibration_image %}
+            <div class="mt-6">
+                <h3 class="text-lg font-medium mb-2">Calibration Image</h3>
+                <img src="{{ calibration.calibration_image.url }}" alt="Calibration reference image" 
+                     class="max-w-full h-auto rounded border border-gray-300">
+            </div>
+            {% endif %}
+            
+            <!-- Actions -->
+            <div class="mt-6 flex space-x-4">
+                {% if not calibration.is_active %}
+                    <form method="post" action="{% url 'calibration_activate' wall.pk calibration.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                            Activate Calibration
+                        </button>
+                    </form>
+                {% endif %}
+                
+                <form method="post" action="{% url 'calibration_delete' wall.pk calibration.pk %}"
+                      onsubmit="return confirm('Are you sure you want to delete this calibration?')">
+                    {% csrf_token %}
+                    <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">
+                        Delete Calibration
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Technical Details -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Technical Details</h2>
+            
+            <!-- ArUco Markers -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium mb-2">ArUco Markers ({{ calibration.aruco_markers|length }})</h3>
+                <div class="bg-gray-100 p-4 rounded max-h-48 overflow-y-auto">
+                    {% for marker_id, marker_data in calibration.aruco_markers.items %}
+                    <div class="mb-2 pb-2 border-b border-gray-300 last:border-b-0">
+                        <span class="font-medium">Marker {{ marker_id }}:</span>
+                        {% if marker_data.type == 'rect' %}
+                            <span class="text-sm text-gray-600 ml-2">
+                                Rect ({{ marker_data.x }}, {{ marker_data.y }}) - {{ marker_data.width }}x{{ marker_data.height }}
+                            </span>
+                        {% elif marker_data.type == 'circle' %}
+                            <span class="text-sm text-gray-600 ml-2">
+                                Circle ({{ marker_data.cx }}, {{ marker_data.cy }}) - r={{ marker_data.r }}
+                            </span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Camera Matrix -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium mb-2">Camera Matrix</h3>
+                <div class="bg-gray-100 p-4 rounded font-mono text-sm">
+                    {% for row in calibration.camera_matrix %}
+                    [{{ row|join:", " }}]<br>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Perspective Transform -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium mb-2">Perspective Transform Matrix</h3>
+                <div class="bg-gray-100 p-4 rounded font-mono text-sm">
+                    {% for row in calibration.perspective_transform %}
+                    [{{ row|join:", " }}]<br>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Distortion Coefficients -->
+            <div>
+                <h3 class="text-lg font-medium mb-2">Distortion Coefficients</h3>
+                <div class="bg-gray-100 p-4 rounded font-mono text-sm">
+                    [{{ calibration.distortion_coeffs|join:", " }}]
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Calibration Visualization -->
+    <div class="mt-8 bg-white shadow-md rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">Calibration Visualization</h2>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- SVG Preview -->
+            <div>
+                <h3 class="text-lg font-medium mb-2">Wall Layout (SVG)</h3>
+                {% if wall.svg_file %}
+                <div class="bg-gray-100 p-4 rounded border border-gray-300">
+                    <img src="{{ wall.svg_file.url }}" alt="Wall SVG" class="max-w-full h-auto">
+                </div>
+                {% else %}
+                <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4">
+                    <p class="font-bold">No SVG File</p>
+                    <p>No SVG file associated with this wall.</p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Transformed SVG Overlay -->
+            {% if wall.wall_image and calibration.perspective_transform %}
+            <div>
+                <h3 class="text-lg font-medium mb-2">Transformed SVG Overlay</h3>
+                <div class="bg-gray-100 p-4 rounded border border-gray-300 relative overflow-hidden">
+                    <img src="{{ wall.wall_image.url }}" alt="Wall Image" class="max-w-full h-auto" id="wallImage">
+                    {% if calibration.perspective_transform %}
+                    <img src="{{ wall.svg_file.url }}" alt="Transformed SVG"
+                         class="absolute top-0 left-0 max-w-full h-auto pointer-events-none"
+                         id="svgOverlay"
+                         style="opacity: 0.75; z-index: 10;">
+                    {% endif %}
+                </div>
+                
+                <!-- Transformation controls -->
+                {% if calibration.perspective_transform %}
+                <div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+                    <h4 class="font-medium text-blue-800 mb-2">Transformation Controls</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button id="resetTransform" class="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">
+                            Reset Transform
+                        </button>
+                        <button id="applyTransform" class="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600">
+                            Apply Transform
+                        </button>
+                        <label class="flex items-center text-sm">
+                            <input type="checkbox" id="showTransform" class="mr-2" checked>
+                            Show Transformed SVG
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Coordinate Mapping Info -->
+            <div>
+                <h3 class="text-lg font-medium mb-2">Coordinate Mapping</h3>
+                <div class="bg-gray-100 p-4 rounded">
+                    <p class="text-sm text-gray-600 mb-2">
+                        This calibration maps camera coordinates to SVG coordinates using the detected ArUco markers.
+                    </p>
+                    <p class="text-sm text-gray-600 mb-2">
+                        <strong>Wall Dimensions:</strong> {{ wall.width_mm }}mm × {{ wall.height_mm }}mm
+                    </p>
+                    <p class="text-sm text-gray-600">
+                        <strong>Active:</strong> This calibration can be used for touch detection and pose tracking.
+                    </p>
+                    
+                    {% if calibration.is_active %}
+                    <div class="mt-4 p-3 bg-green-100 border-l-4 border-green-500 text-green-700">
+                        <p class="font-medium">This calibration is currently active</p>
+                        <p class="text-sm">It will be used for pose detection and touch tracking on this wall.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+
+{% if wall.wall_image and calibration.calibration_type == 'manual_points' and calibration.manual_image_points and calibration.manual_svg_points %}
+
+<script id="calibrationData" type="application/json">
+
+    {
+
+        "imagePoints": {{ calibration.manual_image_points|safe }},
+
+        "svgPoints": {{ calibration.manual_svg_points|safe }},
+
+        "imageWidth": {{ calibration.manual_image_width|default:0 }},
+
+        "imageHeight": {{ calibration.manual_image_height|default:0 }},
+
+        "svgWidth": {{ calibration.manual_svg_width|default:0 }},
+
+        "svgHeight": {{ calibration.manual_svg_height|default:0 }}
+
+    }
+
+</script>
+
+
+
+<script>
+
+document.addEventListener('DOMContentLoaded', function() {
+
+    const wallImage = document.getElementById('wallImage');
+
+    const svgOverlay = document.getElementById('svgOverlay');
+
+    const resetBtn = document.getElementById('resetTransform');
+
+    const applyBtn = document.getElementById('applyTransform');
+
+    const showCheckbox = document.getElementById('showTransform');
+
+
+
+    const calibrationData = JSON.parse(document.getElementById('calibrationData').textContent);
+
+
+
+    // --- Start of homography calculation functions ---
+
+    function solveLinear(A, b) {
+
+        const n = A.length;
+
+        for (let i = 0; i < n; i++) {
+
+            A[i] = A[i].slice();
+
+            A[i].push(b[i]);
+
+        }
+
+        for (let i = 0; i < n; i++) {
+
+            let maxRow = i;
+
+            for (let r = i + 1; r < n; r++) {
+
+                if (Math.abs(A[r][i]) > Math.abs(A[maxRow][i])) maxRow = r;
+
+            }
+
+            if (maxRow !== i) {
+
+                const tmp = A[i]; A[i] = A[maxRow]; A[maxRow] = tmp;
+
+            }
+
+            const pivot = A[i][i];
+
+            for (let c = i; c <= n; c++) A[i][c] /= pivot;
+
+            for (let r = 0; r < n; r++) {
+
+                if (r === i) continue;
+
+                const f = A[r][i];
+
+                for (let c = i; c <= n; c++) A[r][c] -= f * A[i][c];
+
+            }
+
+        }
+
+        const x = new Array(n);
+
+        for (let i = 0; i < n; i++) x[i] = A[i][n];
+
+        return x;
+
+    }
+
+
+
+    function computeHomography4(srcPts, dstPts) {
+
+        if (srcPts.length !== 4) throw new Error('Need 4 points for homography');
+
+        const A = [];
+
+        const b = [];
+
+        for (let i = 0; i < 4; i++) {
+
+            const x = srcPts[i][0], y = srcPts[i][1];
+
+            const X = dstPts[i][0], Y = dstPts[i][1];
+
+            A.push([x, y, 1, 0, 0, 0, -x*X, -y*X]);
+
+            b.push(X);
+
+            A.push([0, 0, 0, x, y, 1, -x*Y, -y*Y]);
+
+            b.push(Y);
+
+        }
+
+        const h = solveLinear(A, b);
+
+        return [
+
+            [h[0], h[1], h[2]],
+
+            [h[3], h[4], h[5]],
+
+            [h[6], h[7], 1]
+
+        ];
+
+    }
+
+    // --- End of homography calculation functions ---
+
+
+
+    function applyTransformation() {
+
+        if (!svgOverlay || !wallImage || !calibrationData) return;
+
+
+
+        if (!wallImage.complete || !svgOverlay.complete) {
+
+            setTimeout(applyTransformation, 100);
+
+            return;
+
+        }
+
+
+
+        const newImageRect = wallImage.getBoundingClientRect();
+
+        const newSvgRect = svgOverlay.getBoundingClientRect();
+
+
+
+        const origImgWidth = calibrationData.imageWidth;
+
+        const origImgHeight = calibrationData.imageHeight;
+
+        const origSvgWidth = calibrationData.svgWidth;
+
+        const origSvgHeight = calibrationData.svgHeight;
+
+
+
+        if (!origImgWidth || !origSvgWidth) {
+
+            console.error("Original calibration dimensions not found. Cannot recalculate transform.");
+
+            return;
+
+        }
+
+
+
+        const xScaleImg = newImageRect.width / origImgWidth;
+
+        const yScaleImg = newImageRect.height / origImgHeight;
+
+        const xScaleSvg = newSvgRect.width / origSvgWidth;
+
+        const yScaleSvg = newSvgRect.height / origSvgHeight;
+
+
+
+        const scaledImgPts = calibrationData.imagePoints.map(p => [p[0] * xScaleImg, p[1] * yScaleImg]);
+
+        const scaledSvgPts = calibrationData.svgPoints.map(p => [p[0] * xScaleSvg, p[1] * yScaleSvg]);
+
+
+
+        try {
+
+            const H = computeHomography4(scaledSvgPts, scaledImgPts);
+
+
+
+            const h11 = H[0][0], h12 = H[0][1], h13 = H[0][2];
+
+            const h21 = H[1][0], h22 = H[1][1], h23 = H[1][2];
+
+            const h31 = H[2][0], h32 = H[2][1];
+
+
+
+            const css = [
+
+                h11, h21, 0, h31,
+
+                h12, h22, 0, h32,
+
+                0, 0, 1, 0,
+
+                h13, h23, 0, 1
+
+            ];
+
+
+
+            svgOverlay.style.transform = `matrix3d(${css.join(',')})`;
+
+            svgOverlay.style.transformOrigin = '0 0';
+
+            svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+
+        } catch (err) {
+
+            console.error('Failed to compute or apply homography:', err);
+
+        }
+
+    }
+
+
+
+    function resetTransformation() {
+
+        if (!svgOverlay) return;
+
+        svgOverlay.style.transform = 'none';
+
+        svgOverlay.style.transformOrigin = '0 0';
+
+    }
+
+
+
+    function toggleOverlay() {
+
+        if (!svgOverlay) return;
+
+        svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+
+    }
+
+
+
+    if (applyBtn) applyBtn.addEventListener('click', applyTransformation);
+
+    if (resetBtn) resetBtn.addEventListener('click', resetTransformation);
+
+    if (showCheckbox) showCheckbox.addEventListener('change', toggleOverlay);
+
+
+
+    if (wallImage && svgOverlay) {
+
+        wallImage.addEventListener('load', applyTransformation);
+
+        svgOverlay.addEventListener('load', applyTransformation);
+
+        if (wallImage.complete && svgOverlay.complete) {
+
+            setTimeout(applyTransformation, 200); // Delay to ensure layout is stable
+
+        } else {
+
+            setTimeout(applyTransformation, 500); 
+
+        }
+
+    }
+
+});
+
+</script>
+
+{% else %}
+
+{{ calibration.perspective_transform|json_script:"calibrationTransform" }}
+
+<script>
+
+document.addEventListener('DOMContentLoaded', function() {
+
+    const wallImage = document.getElementById('wallImage');
+
+    const svgOverlay = document.getElementById('svgOverlay');
+
+    const resetBtn = document.getElementById('resetTransform');
+
+    const applyBtn = document.getElementById('applyTransform');
+
+    const showCheckbox = document.getElementById('showTransform');
+
+
+
+    // Function to invert a 3x3 matrix
+
+    function invertMatrix(M) {
+
+        const det = M[0][0] * (M[1][1] * M[2][2] - M[2][1] * M[1][2]) -
+
+                    M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+
+                    M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+
+
+
+        if (det === 0) {
+
+            console.error("Matrix is not invertible");
+
+            return M; // Return original matrix if not invertible
+
+        }
+
+
+
+        const invDet = 1.0 / det;
+
+
+
+        return [
+
+            [(M[1][1] * M[2][2] - M[2][1] * M[1][2]) * invDet,
+
+             (M[0][2] * M[2][1] - M[0][1] * M[2][2]) * invDet,
+
+             (M[0][1] * M[1][2] - M[0][2] * M[1][1]) * invDet],
+
+            [(M[1][2] * M[2][0] - M[1][0] * M[2][2]) * invDet,
+
+             (M[0][0] * M[2][2] - M[0][2] * M[2][0]) * invDet,
+
+             (M[1][0] * M[0][2] - M[0][0] * M[1][2]) * invDet],
+
+            [(M[1][0] * M[2][1] - M[2][0] * M[1][1]) * invDet,
+
+             (M[2][0] * M[0][1] - M[0][0] * M[2][1]) * invDet,
+
+             (M[0][0] * M[1][1] - M[1][0] * M[0][1]) * invDet]
+
+        ];
+
+    }
+
+
+
+    function applyTransformation() {
+
+        if (!svgOverlay || !wallImage) return;
+
+
+
+        const transformMatrix = JSON.parse(document.getElementById('calibrationTransform').textContent);
+
+
+
+        if (!transformMatrix) {
+
+            console.error('Transform matrix is undefined.');
+
+            return;
+
+        }
+
+
+
+        if (!wallImage.complete || !svgOverlay.complete) {
+
+            setTimeout(applyTransformation, 100);
+
+            return;
+
+        }
+
+
+
+        const invertedTransform = invertMatrix(transformMatrix);
+
+        const h = invertedTransform.flat();
+
+        const cssMatrix = [
+
+            h[0], h[3], 0, h[6],
+
+            h[1], h[4], 0, h[7],
+
+            0, 0, 1, 0,
+
+            h[2], h[5], 0, 1
+
+        ].join(',');
+
+
+
+        svgOverlay.style.transform = `matrix3d(${cssMatrix})`;
+
+        svgOverlay.style.transformOrigin = '0 0';
+
+        svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+
+    }
+
+
+
+    function resetTransformation() {
+
+        if (!svgOverlay) return;
+
+        svgOverlay.style.transform = 'none';
+
+        svgOverlay.style.transformOrigin = '0 0';
+
+    }
+
+
+
+    function toggleOverlay() {
+
+        if (!svgOverlay) return;
+
+        svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+
+    }
+
+
+
+    if (applyBtn) applyBtn.addEventListener('click', applyTransformation);
+
+    if (resetBtn) resetBtn.addEventListener('click', resetTransformation);
+
+    if (showCheckbox) showCheckbox.addEventListener('change', toggleOverlay);
+
+
+
+    if (wallImage && svgOverlay) {
+
+        wallImage.addEventListener('load', applyTransformation);
+
+        svgOverlay.addEventListener('load', applyTransformation);
+
+        if (wallImage.complete) {
+
+            applyTransformation();
+
+        }
+
+    }
+
+});
+
+</script>
+
+{% endif %}
+
+{% endblock %}

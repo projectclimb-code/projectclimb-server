@@ -2,15 +2,25 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     GroupViewSet, AppUserViewSet, VenueViewSet, WallViewSet,
-    HoldViewSet, RouteViewSet, RoutePointViewSet, HomePageView,
+    HoldViewSet, RouteViewSet, SessionViewSet, HomePageView,
     GroupListView, GroupDetailView, GroupCreateView, GroupUpdateView, GroupDeleteView,
     VenueListView, VenueDetailView, VenueCreateView, VenueUpdateView, VenueDeleteView,
     AppUserListView, AppUserDetailView, AppUserCreateView, AppUserUpdateView, AppUserDeleteView,
     WallListView, WallDetailView, WallCreateView, WallUpdateView, WallDeleteView,
     HoldListView, HoldDetailView, HoldCreateView, HoldUpdateView, HoldDeleteView,
     RouteListView, RouteDetailView, RouteCreateView, RouteUpdateView, RouteDeleteView,
-    RoutePointListView, RoutePointDetailView, RoutePointCreateView, RoutePointUpdateView, RoutePointDeleteView, # Add RoutePoint CRUD views
-    CameraView, video_feed, capture_frame, PoseRealtimeView,
+    CameraView, video_feed, capture_frame, PoseRealtimeView, PoseSkeletonView, PhoneCameraView, WebSocketRelayTestView,
+    SessionListView, SessionDetailView, SessionDeleteView, SessionReplayView,
+    SessionRecordingViewSet,
+    TaskManagementView, trigger_fake_session_task, get_task_status,
+    wall_upload_svg, wall_upload_image, wall_capture_camera_image,
+    WallAnimationView,
+)
+from .calibration.views import (
+    wall_calibration_list, calibration_create, calibration_detail,
+    calibration_activate, calibration_delete, api_detect_markers,
+    calibration_manual, api_upload_calibration_image, api_save_manual_calibration,
+    wall_svg_overlay, wall_calibrated_svg_data, calibration_manual_points
 )
 
 router = DefaultRouter()
@@ -21,7 +31,8 @@ router.register(r'venues', VenueViewSet)
 router.register(r'walls', WallViewSet)
 router.register(r'holds', HoldViewSet)
 router.register(r'routes', RouteViewSet)
-router.register(r'routepoints', RoutePointViewSet)
+router.register(r'sessions', SessionViewSet)
+router.register(r'session-recordings', SessionRecordingViewSet)
 
 urlpatterns = [
     path('', HomePageView.as_view(), name='home'),  # New home page
@@ -55,6 +66,24 @@ urlpatterns = [
     path('walls/<uuid:pk>/', WallDetailView.as_view(), name='wall_detail'),
     path('walls/<uuid:pk>/update/', WallUpdateView.as_view(), name='wall_update'),
     path('walls/<uuid:pk>/delete/', WallDeleteView.as_view(), name='wall_delete'),
+    path('walls/<uuid:pk>/upload-svg/', wall_upload_svg, name='wall_upload_svg'),
+    path('walls/<uuid:pk>/upload-image/', wall_upload_image, name='wall_upload_image'),
+    path('walls/<uuid:pk>/capture-camera/', wall_capture_camera_image, name='wall_capture_camera_image'),
+    path('walls/<uuid:pk>/animation/', WallAnimationView.as_view(), name='wall_animation'),
+    
+    # Calibration URLs
+    path('calibration/wall/<int:wall_id>/', wall_calibration_list, name='wall_calibration_list'),
+    path('calibration/wall/<int:wall_id>/create/', calibration_create, name='calibration_create'),
+    path('calibration/wall/<int:wall_id>/manual/', calibration_manual, name='calibration_manual'),
+    path('calibration/wall/<int:wall_id>/manual-points/', calibration_manual_points, name='calibration_manual_points'),
+    path('calibration/wall/<int:wall_id>/<int:calibration_id>/', calibration_detail, name='calibration_detail'),
+    path('calibration/wall/<int:wall_id>/<int:calibration_id>/activate/', calibration_activate, name='calibration_activate'),
+    path('calibration/wall/<int:wall_id>/<int:calibration_id>/delete/', calibration_delete, name='calibration_delete'),
+    path('calibration/wall/<int:wall_id>/detect-markers/', api_detect_markers, name='api_detect_markers'),
+    path('calibration/wall/<int:wall_id>/upload-calibration-image/', api_upload_calibration_image, name='api_upload_calibration_image'),
+    path('calibration/wall/<int:wall_id>/save-manual-calibration/', api_save_manual_calibration, name='api_save_manual_calibration'),
+    path('calibration/wall/<int:wall_id>/svg-overlay/', wall_svg_overlay, name='wall_svg_overlay'),
+    path('calibration/wall/<int:wall_id>/svg-data/', wall_calibrated_svg_data, name='wall_calibrated_svg_data'),
 
     # Hold CRUD URLs
     path('holds/', HoldListView.as_view(), name='hold_list'),
@@ -70,15 +99,23 @@ urlpatterns = [
     path('routes/<uuid:pk>/update/', RouteUpdateView.as_view(), name='route_update'),
     path('routes/<uuid:pk>/delete/', RouteDeleteView.as_view(), name='route_delete'),
 
-    # RoutePoint CRUD URLs
-    path('routepoints/', RoutePointListView.as_view(), name='routepoint_list'),
-    path('routepoints/create/', RoutePointCreateView.as_view(), name='routepoint_create'),
-    path('routepoints/<int:pk>/', RoutePointDetailView.as_view(), name='routepoint_detail'), # Note: int:pk
-    path('routepoints/<int:pk>/update/', RoutePointUpdateView.as_view(), name='routepoint_update'), # Note: int:pk
-    path('routepoints/<int:pk>/delete/', RoutePointDeleteView.as_view(), name='routepoint_delete'), # Note: int:pk
 
     # Camera Stream URL
     path('camera/', CameraView.as_view(), name='camera'),
     path('video_feed/', video_feed, name='video_feed'),
     path('pose/', PoseRealtimeView.as_view(), name='pose_realtime'),
+    path('pose-skeleton/', PoseSkeletonView.as_view(), name='pose_skeleton'),
+    path('phone-camera/', PhoneCameraView.as_view(), name='phone_camera'),
+    path('websocket-relay-test/', WebSocketRelayTestView.as_view(), name='websocket_relay_test'),
+    
+    # Session Recording URLs
+    path('sessions/', SessionListView.as_view(), name='session_list'),
+    path('sessions/<uuid:pk>/', SessionDetailView.as_view(), name='session_detail'),
+    path('sessions/<uuid:pk>/delete/', SessionDeleteView.as_view(), name='session_delete'),
+    path('sessions/<uuid:pk>/replay/', SessionReplayView.as_view(), name='session_replay'),
+    
+    # Task Management URLs
+    path('tasks/', TaskManagementView.as_view(), name='task_management'),
+    path('tasks/trigger-fake-session/', trigger_fake_session_task, name='trigger_fake_session_task'),
+    path('tasks/status/<str:task_id>/', get_task_status, name='get_task_status'),
 ]

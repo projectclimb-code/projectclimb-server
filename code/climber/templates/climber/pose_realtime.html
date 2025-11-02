@@ -17,12 +17,47 @@ python code/pose_streamer.py --source 0
 <a href="?fullscreen=true" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mb-4 inline-block">Go Fullscreen</a>
 {% endif %}
 
+<!-- Camera Toggle -->
+<div class="mb-4">
+    <label class="flex items-center">
+        <input type="checkbox" id="show-camera" class="mr-2">
+        <span class="text-gray-700">Show Camera Image</span>
+    </label>
+</div>
+
 <div id="pose-container" class="{% if fullscreen %}fixed top-0 left-0 w-full h-full bg-black z-50{% else %}w-full h-96 bg-black rounded-lg shadow-md relative{% endif %}">
+    <!-- Camera Image Container -->
+    <div id="camera-container" class="absolute inset-0 hidden">
+        <img id="camera-image" class="w-full h-full object-contain" alt="Camera Feed">
+    </div>
+    
+    <!-- 3D Pose Visualization Container -->
+    <div id="threejs-container" class="absolute inset-0"></div>
     <div id="connection-status" class="absolute top-4 left-4 text-white font-semibold bg-red-500 px-3 py-1 rounded">
         Connecting...
     </div>
+    
+    <!-- Recording Controls -->
+    <div id="recording-controls" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-4 rounded-lg">
+        <div id="recording-status" class="text-white mb-2">Not Recording</div>
+        <div id="recording-timer" class="text-white mb-2">00:00</div>
+        <div class="mb-2">
+            <input type="text" id="session-name" placeholder="Session name"
+                   class="px-2 py-1 rounded text-black w-full">
+        </div>
+        <div class="flex space-x-2">
+            <button id="start-recording" class="bg-red-500 hover:bg-red-700 text-white px-3 py-1 rounded flex-1">
+                Start Recording
+            </button>
+            <button id="stop-recording" class="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded flex-1" disabled>
+                Stop Recording
+            </button>
+        </div>
+        <div id="recording-session-id" class="text-white text-xs mt-2 hidden"></div>
+    </div>
+    
     {% if fullscreen %}
-    <a href="?" class="absolute top-4 right-4 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded z-50">Exit Fullscreen</a>
+    <a href="?" class="absolute top-4 right-4 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded z-50" style="margin-top: 120px;">Exit Fullscreen</a>
     {% endif %}
 </div>
 {% endblock content %}
@@ -33,7 +68,13 @@ python code/pose_streamer.py --source 0
     document.addEventListener('DOMContentLoaded', function () {
         const statusElement = document.getElementById('connection-status');
         const container = document.getElementById('pose-container');
+        const cameraContainer = document.getElementById('camera-container');
+        const cameraImage = document.getElementById('camera-image');
+        const threejsContainer = document.getElementById('threejs-container');
+        const showCameraCheckbox = document.getElementById('show-camera');
         let socket;
+        let showCamera = false;
+        let currentSessionId = null;
 
         // --- WebSocket Setup with Reconnection ---
         function connect() {
@@ -51,6 +92,18 @@ python code/pose_streamer.py --source 0
                 statusElement.textContent = 'Connected';
                 statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-green-500 px-3 py-1 rounded';
             };
+            
+            // Camera toggle event listener
+            showCameraCheckbox.addEventListener('change', function() {
+                showCamera = this.checked;
+                if (showCamera) {
+                    cameraContainer.classList.remove('hidden');
+                    threejsContainer.style.zIndex = '10';
+                } else {
+                    cameraContainer.classList.add('hidden');
+                    threejsContainer.style.zIndex = '1';
+                }
+            });
 
             socket.onclose = function (e) {
                 console.error('WebSocket connection closed. Attempting to reconnect in 3 seconds...');
@@ -70,8 +123,27 @@ python code/pose_streamer.py --source 0
 
             socket.onmessage = function (e) {
                 const data = JSON.parse(e.data);
-                // Pass landmarks to the 3D rendering function
-                updatePose(data);
+                
+                // Handle recording messages
+                if (data.type === 'recording_started') {
+                    currentSessionId = data.session_id;
+                    document.getElementById('recording-session-id').textContent = `Session ID: ${currentSessionId}`;
+                } else if (data.type === 'recording_stopped') {
+                    currentSessionId = null;
+                    document.getElementById('recording-session-id').textContent = '';
+                } else if (data.type === 'error') {
+                    console.error('Recording error:', data.message);
+                    statusElement.textContent = 'Error: ' + data.message;
+                    statusElement.className = 'absolute top-4 left-4 text-white font-semibold bg-red-600 px-3 py-1 rounded';
+                } else {
+                    // Handle regular pose data
+                    // Update camera image if available and toggle is on
+                    if (data.frame_image && showCamera) {
+                        cameraImage.src = 'data:image/jpeg;base64,' + data.frame_image;
+                    }
+                    // Pass landmarks to the 3D rendering function
+                    updatePose(data);
+                }
             };
         }
         
@@ -93,9 +165,10 @@ python code/pose_streamer.py --source 0
             camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
             camera.position.z = 2; // Adjust camera position to view the pose
 
-            renderer = new THREE.WebGLRenderer();
+            renderer = new THREE.WebGLRenderer({ alpha: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
-            container.appendChild(renderer.domElement);
+            renderer.setClearColor(0x000000, 0); // Transparent background
+            threejsContainer.appendChild(renderer.domElement);
 
             // Create initial empty geometry for points and lines
             const pointsGeometry = new THREE.BufferGeometry();
@@ -154,6 +227,83 @@ python code/pose_streamer.py --source 0
             posePoints.geometry.attributes.position.needsUpdate = true;
             poseLines.geometry.attributes.position.needsUpdate = true;
             poseLines.geometry.index.needsUpdate = true;
+        }
+
+        // Recording functionality
+        let isRecording = false;
+        let recordingStartTime = null;
+        let recordingTimer = null;
+
+        document.getElementById('start-recording').addEventListener('click', startRecording);
+        document.getElementById('stop-recording').addEventListener('click', stopRecording);
+
+        function startRecording() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                alert('WebSocket connection not established. Please wait for connection.');
+                return;
+            }
+            
+            const sessionName = document.getElementById('session-name').value || 'Untitled Session';
+            
+            socket.send(JSON.stringify({
+                type: 'start_recording',
+                name: sessionName
+            }));
+            
+            isRecording = true;
+            recordingStartTime = Date.now();
+            updateRecordingUI();
+            startTimer();
+        }
+
+        function stopRecording() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                console.error('WebSocket connection not established');
+                return;
+            }
+            
+            socket.send(JSON.stringify({
+                type: 'stop_recording'
+            }));
+            
+            isRecording = false;
+            updateRecordingUI();
+            stopTimer();
+        }
+
+        function updateRecordingUI() {
+            const statusEl = document.getElementById('recording-status');
+            const startBtn = document.getElementById('start-recording');
+            const stopBtn = document.getElementById('stop-recording');
+            const sessionIdEl = document.getElementById('recording-session-id');
+            
+            if (isRecording) {
+                statusEl.textContent = 'Recording...';
+                statusEl.className = 'text-red-500 mb-2 font-semibold';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                sessionIdEl.classList.remove('hidden');
+            } else {
+                statusEl.textContent = 'Not Recording';
+                statusEl.className = 'text-white mb-2';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                sessionIdEl.classList.add('hidden');
+            }
+        }
+
+        function startTimer() {
+            recordingTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const seconds = (elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('recording-timer').textContent = `${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(recordingTimer);
+            document.getElementById('recording-timer').textContent = '00:00';
         }
 
         // Initial connection

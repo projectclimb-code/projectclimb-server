@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image-SVG Alignment Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#1d4ed8',
+                        accent: '#8b5cf6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .point-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            z-index: 10;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px black;
+        }
+        .image-container, .svg-container {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .overlay-container {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .overlay-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .instructions {
+            background-color: #eff6ff;
+            border-left: 4px solid #3b82f6;
+        }
+        .point-counter {
+            font-weight: bold;
+            color: #1d4ed8;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Image-SVG Alignment Tool</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto">Upload an image and SVG file, then align them by matching corresponding points</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image</label>
+                    <div class="flex items-center">
+                        <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                        <label for="imageUpload" class="flex-1 cursor-pointer bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg p-4 text-center">
+                            <div class="flex flex-col items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-blue-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="text-blue-600 font-medium">Choose Image File</span>
+                                <span class="text-gray-500 text-sm mt-1">JPG, PNG, or GIF</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Upload SVG</label>
+                    <div class="flex items-center">
+                        <input type="file" id="svgUpload" accept=".svg" class="hidden">
+                        <label for="svgUpload" class="flex-1 cursor-pointer bg-purple-50 border-2 border-dashed border-purple-200 rounded-lg p-4 text-center">
+                            <div class="flex flex-col items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-purple-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                </svg>
+                                <span class="text-purple-600 font-medium">Choose SVG File</span>
+                                <span class="text-gray-500 text-sm mt-1">SVG files only</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions rounded-lg p-4 mb-8">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800">How to use this tool</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <ol class="list-decimal pl-5 space-y-1">
+                            <li>Upload an image and SVG file using the buttons above</li>
+                            <li>Select 3 or 4 corresponding points on both the image and SVG</li>
+                            <li>The SVG will be automatically transformed to match the image points</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Display Area -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Image Display -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <h2 class="text-lg font-semibold text-gray-800 mb-3">Image</h2>
+                <div class="image-container" id="imageContainer">
+                    <div class="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <p class="text-gray-500">Upload an image to begin</p>
+                    </div>
+                </div>
+                <div class="mt-3 text-sm text-gray-600">
+                    Points selected: <span id="imagePointCount" class="point-counter">0</span>/4
+                </div>
+            </div>
+            
+            <!-- SVG Display -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <h2 class="text-lg font-semibold text-gray-800 mb-3">SVG</h2>
+                <div class="svg-container" id="svgContainer">
+                    <div class="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <p class="text-gray-500">Upload an SVG to begin</p>
+                    </div>
+                </div>
+                <div class="mt-3 text-sm text-gray-600">
+                    Points selected: <span id="svgPointCount" class="point-counter">0</span>/4
+                </div>
+            </div>
+            
+            <!-- Overlay Display -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <h2 class="text-lg font-semibold text-gray-800 mb-3">Overlay Result</h2>
+                <div class="overlay-container" id="overlayContainer">
+                    <div class="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <p class="text-gray-500">Upload both files to see overlay</p>
+                    </div>
+                </div>
+                <div class="mt-3 text-sm text-gray-600">
+                    <button id="resetPoints" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded-lg text-sm mr-2">
+                        Reset Points
+                    </button>
+                    <button id="transformBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm">
+                        Transform SVG
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transformation Result -->
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-3">Transformation Matrix</h2>
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <pre id="matrixOutput" class="text-sm text-gray-700 overflow-x-auto">No transformation applied yet</pre>
+            </div>
+            <div class="mt-4">
+                <button id="downloadBtn" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Aligned SVG
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let imagePoints = [];
+        let svgPoints = [];
+        let imageElement = null;
+        let svgElement = null;
+        let overlayImage = null;
+        let overlaySvg = null;
+        let transformMatrix = null;
+
+        // DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const svgUpload = document.getElementById('svgUpload');
+        const imageContainer = document.getElementById('imageContainer');
+        const svgContainer = document.getElementById('svgContainer');
+        const overlayContainer = document.getElementById('overlayContainer');
+        const imagePointCount = document.getElementById('imagePointCount');
+        const svgPointCount = document.getElementById('svgPointCount');
+        const resetPointsBtn = document.getElementById('resetPoints');
+        const transformBtn = document.getElementById('transformBtn');
+        const matrixOutput = document.getElementById('matrixOutput');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // File upload handlers
+        imageUpload.addEventListener('change', function(e) {
+            if (e.target.files && e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    loadImage(event.target.result);
+                }
+                reader.readAsDataURL(e.target.files[0]);
+            }
+        });
+
+        svgUpload.addEventListener('change', function(e) {
+            if (e.target.files && e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    loadSVG(event.target.result);
+                }
+                reader.readAsText(e.target.files[0]);
+            }
+        });
+
+        // Load image into container
+        function loadImage(src) {
+            const container = imageContainer.querySelector('div');
+            container.innerHTML = '';
+            
+            imageElement = new Image();
+            imageElement.src = src;
+            imageElement.className = 'w-full h-full object-contain';
+            container.appendChild(imageElement);
+            
+            imageElement.onload = function() {
+                // Clear previous points when new image is loaded
+                imagePoints = [];
+                updatePointCounter(imagePointCount, imagePoints.length);
+                
+                // Add click event for point selection
+                container.addEventListener('click', handleImageClick);
+            };
+        }
+
+        // Load SVG into container
+        function loadSVG(content) {
+            const container = svgContainer.querySelector('div');
+            container.innerHTML = '';
+            
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(content, 'image/svg+xml');
+            svgElement = svgDoc.documentElement;
+            
+            // Set viewBox if not present
+            if (!svgElement.getAttribute('viewBox')) {
+                const width = svgElement.getAttribute('width') || '500';
+                const height = svgElement.getAttribute('height') || '500';
+                svgElement.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            }
+            
+            svgElement.classList.add('w-full', 'h-full');
+            container.appendChild(svgElement);
+            
+            // Clear previous points when new SVG is loaded
+            svgPoints = [];
+            updatePointCounter(svgPointCount, svgPoints.length);
+            
+            // Add click event for point selection
+            container.addEventListener('click', handleSvgClick);
+            
+            // Also load into overlay container
+            setupOverlay();
+        }
+
+        // Setup overlay container
+        function setupOverlay() {
+            if (!imageElement || !svgElement) return;
+            
+            const container = overlayContainer.querySelector('div');
+            container.innerHTML = '';
+            
+            // Create image element for overlay
+            overlayImage = new Image();
+            overlayImage.src = imageElement.src;
+            overlayImage.classList.add('w-full', 'h-full', 'object-contain');
+            container.appendChild(overlayImage);
+            
+            // Clone SVG for overlay
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgElement.outerHTML, 'image/svg+xml');
+            overlaySvg = svgDoc.documentElement;
+            overlaySvg.classList.add('overlay-svg');
+            container.appendChild(overlaySvg);
+            
+            // Reset points when overlay changes
+            imagePoints = [];
+            svgPoints = [];
+            updatePointCounter(imagePointCount, imagePoints.length);
+            updatePointCounter(svgPointCount, svgPoints.length);
+            matrixOutput.textContent = 'No transformation applied yet';
+        }
+
+        // Handle click on image
+        function handleImageClick(e) {
+            if (imagePoints.length >= 4) {
+                alert('Maximum 4 points allowed. Reset to select new points.');
+                return;
+            }
+            
+            const rect = imageContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Store relative coordinates (0-1)
+            const relX = x / imageContainer.offsetWidth;
+            const relY = y / imageContainer.offsetHeight;
+            
+            imagePoints.push({x: relX, y: relY});
+            updatePointCounter(imagePointCount, imagePoints.length);
+            
+            // Add visual marker
+            addPointMarker(imageContainer, x, y, 'blue');
+            
+            updateTransformButton();
+        }
+
+        // Handle click on SVG
+        function handleSvgClick(e) {
+            if (svgPoints.length >= 4) {
+                alert('Maximum 4 points allowed. Reset to select new points.');
+                return;
+            }
+            
+            const rect = svgContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Store relative coordinates (0-1)
+            const relX = x / svgContainer.offsetWidth;
+            const relY = y / svgContainer.offsetHeight;
+            
+            svgPoints.push({x: relX, y: relY});
+            updatePointCounter(svgPointCount, svgPoints.length);
+            
+            // Add visual marker
+            addPointMarker(svgContainer, x, y, 'purple');
+            
+            updateTransformButton();
+        }
+
+        // Add visual point marker
+        function addPointMarker(container, x, y, color) {
+            const marker = document.createElement('div');
+            marker.className = 'point-marker';
+            marker.style.left = `${x}px`;
+            marker.style.top = `${y}px`;
+            marker.style.backgroundColor = color === 'blue' ? '#3b82f6' : '#8b5cf6';
+            container.appendChild(marker);
+        }
+
+        // Update point counter display
+        function updatePointCounter(element, count) {
+            element.textContent = count;
+        }
+
+        // Update transform button state
+        function updateTransformButton() {
+            const canTransform = imagePoints.length === svgPoints.length && imagePoints.length >= 3;
+            transformBtn.disabled = !canTransform;
+            transformBtn.classList.toggle('bg-blue-500', canTransform);
+            transformBtn.classList.toggle('bg-gray-300', !canTransform);
+            transformBtn.classList.toggle('hover:bg-blue-600', canTransform);
+        }
+
+        // Reset all points
+        function resetPoints() {
+            // Clear points arrays
+            imagePoints = [];
+            svgPoints = [];
+            
+            // Update counters
+            updatePointCounter(imagePointCount, imagePoints.length);
+            updatePointCounter(svgPointCount, svgPoints.length);
+            
+            // Remove markers
+            document.querySelectorAll('.point-marker').forEach(el => el.remove());
+            
+            // Reset transformation
+            if (overlaySvg) {
+                overlaySvg.style.transform = '';
+                overlaySvg.style.transformOrigin = '0 0';
+            }
+            
+            matrixOutput.textContent = 'No transformation applied yet';
+            updateTransformButton();
+        }
+
+        // Reset points button handler
+        resetPointsBtn.addEventListener('click', resetPoints);
+
+        // Transform SVG button handler
+        transformBtn.addEventListener('click', function() {
+            if (imagePoints.length !== svgPoints.length || imagePoints.length < 3) {
+                alert('Need equal number of points (3 or 4) in both image and SVG');
+                return;
+            }
+            
+            // Transform the overlay SVG
+            transformOverlaySvg();
+        });
+
+        // Transform the overlay SVG to match image points
+        function transformOverlaySvg() {
+            if (!overlaySvg || imagePoints.length !== svgPoints.length) return;
+            
+            // Calculate transformation matrix
+            transformMatrix = calculateTransformationMatrix(svgPoints, imagePoints);
+            
+            // Apply transformation to overlay SVG
+            applyTransformation(overlaySvg, transformMatrix);
+            
+            // Display transformation matrix
+            displayMatrix(transformMatrix);
+        }
+
+        // Calculate transformation matrix using SVD (simplified for 2D)
+        function calculateTransformationMatrix(fromPoints, toPoints) {
+            const n = fromPoints.length;
+            
+            // Calculate centroids
+            let centroidFrom = {x: 0, y: 0};
+            let centroidTo = {x: 0, y: 0};
+            
+            for (let i = 0; i < n; i++) {
+                centroidFrom.x += fromPoints[i].x;
+                centroidFrom.y += fromPoints[i].y;
+                centroidTo.x += toPoints[i].x;
+                centroidTo.y += toPoints[i].y;
+            }
+            
+            centroidFrom.x /= n;
+            centroidFrom.y /= n;
+            centroidTo.x /= n;
+            centroidTo.y /= n;
+            
+            // Center the points
+            const centeredFrom = fromPoints.map(p => ({
+                x: p.x - centroidFrom.x,
+                y: p.y - centroidFrom.y
+            }));
+            
+            const centeredTo = toPoints.map(p => ({
+                x: p.x - centroidTo.x,
+                y: p.y - centroidTo.y
+            }));
+            
+            // Calculate covariance matrix
+            let cov = {xx: 0, xy: 0, yx: 0, yy: 0};
+            for (let i = 0; i < n; i++) {
+                cov.xx += centeredFrom[i].x * centeredTo[i].x;
+                cov.xy += centeredFrom[i].x * centeredTo[i].y;
+                cov.yx += centeredFrom[i].y * centeredTo[i].x;
+                cov.yy += centeredFrom[i].y * centeredTo[i].y;
+            }
+            
+            // Simple transformation estimation (scale and rotation)
+            const scale = Math.sqrt((cov.xx + cov.yy) / n);
+            const angle = Math.atan2(cov.yx - cov.xy, cov.xx + cov.yy);
+            
+            // Create transformation matrix
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            
+            const matrix = [
+                [scale * cos, -scale * sin, centroidTo.x - scale * (cos * centroidFrom.x - sin * centroidFrom.y)],
+                [scale * sin, scale * cos, centroidTo.y - scale * (sin * centroidFrom.x + cos * centroidFrom.y)],
+                [0, 0, 1]
+            ];
+            
+            return matrix;
+        }
+
+        // Apply transformation to SVG element
+        function applyTransformation(svg, matrix) {
+            // Convert matrix to CSS transform string
+            const transformStr = `matrix(${matrix[0][0]}, ${matrix[1][0]}, ${matrix[0][1]}, ${matrix[1][1]}, ${matrix[0][2]}, ${matrix[1][2]})`;
+            
+            // Apply transformation
+            svg.style.transform = transformStr;
+            svg.style.transformOrigin = '0 0';
+        }
+
+        // Display transformation matrix
+        function displayMatrix(matrix) {
+            if (!matrix) {
+                matrixOutput.textContent = 'No transformation applied yet';
+                return;
+            }
+            
+            let output = 'Transformation Matrix:\n\n';
+            output += `[ ${matrix[0][0].toFixed(4)}, ${matrix[0][1].toFixed(4)}, ${matrix[0][2].toFixed(4)} ]\n`;
+            output += `[ ${matrix[1][0].toFixed(4)}, ${matrix[1][1].toFixed(4)}, ${matrix[1][2].toFixed(4)} ]\n`;
+            output += `[ ${matrix[2][0].toFixed(4)}, ${matrix[2][1].toFixed(4)}, ${matrix[2][2].toFixed(4)} ]\n\n`;
+            
+            output += 'CSS Transform:\n';
+            output += `transform: matrix(${matrix[0][0].toFixed(4)}, ${matrix[1][0].toFixed(4)}, ${matrix[0][1].toFixed(4)}, ${matrix[1][1].toFixed(4)}, ${matrix[0][2].toFixed(4)}, ${matrix[1][2].toFixed(4)});`;
+            
+            matrixOutput.textContent = output;
+        }
+
+        // Download aligned SVG
+        downloadBtn.addEventListener('click', function() {
+            if (!overlaySvg) {
+                alert('No SVG to download');
+                return;
+            }
+            
+            // Clone the transformed SVG
+            const svgClone = overlaySvg.cloneNode(true);
+            
+            // Create a data URL for download
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svgClone);
+            const blob = new Blob([svgString], {type: 'image/svg+xml'});
+            const url = URL.createObjectURL(blob);
+            
+            // Trigger download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'aligned_svg.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Initialize button states
+        updateTransformButton();
+        transformBtn.disabled = true;
+    </script>
+</body>
+</html>

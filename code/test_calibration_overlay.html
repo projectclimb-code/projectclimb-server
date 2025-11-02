@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calibration Overlay Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+        }
+        .overlay-container {
+            position: relative;
+            display: inline-block;
+            border: 1px solid #ddd;
+            margin: 10px 0;
+        }
+        .overlay-container img {
+            display: block;
+            max-width: 100%;
+        }
+        .svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0.75;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .controls {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        .controls button {
+            margin-right: 10px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background-color: #0056b3;
+        }
+        .info {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #e7f3ff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .matrix-display {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Calibration Overlay Test</h1>
+        
+        <div class="test-section">
+            <h2>Test Data</h2>
+            <div class="info">
+                This page tests the SVG overlay transformation using the same transformation matrix 
+                from the manual point calibration. The transformation should align the SVG overlay 
+                correctly with the wall image.
+            </div>
+            
+            <div class="matrix-display">
+                <strong>Transformation Matrix:</strong><br>
+                [[1.0926956230045957, -0.17260179709250867, -10.707820290652863],<br>
+                [-0.00586731122412406, 1.0575371860597218, -44.00448170690642],<br>
+                [0.00014256299181938662, -0.0008035537823504151, 1.0]]
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Overlay Test</h2>
+            <div class="controls">
+                <button id="applyTransform">Apply Transform</button>
+                <button id="resetTransform">Reset Transform</button>
+                <label>
+                    <input type="checkbox" id="showOverlay" checked> Show SVG Overlay
+                </label>
+            </div>
+            
+            <div class="overlay-container">
+                <img id="wallImage" src="/media/wall_images/SCR-20251020-rnyz.jpeg" alt="Wall Image">
+                <img id="svgOverlay" class="svg-overlay" src="/media/svg_files/wall.svg" alt="SVG Overlay">
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Test Results</h2>
+            <div id="testResults" class="info">
+                Click "Apply Transform" to test the SVG overlay transformation.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const wallImage = document.getElementById('wallImage');
+            const svgOverlay = document.getElementById('svgOverlay');
+            const applyBtn = document.getElementById('applyTransform');
+            const resetBtn = document.getElementById('resetTransform');
+            const showCheckbox = document.getElementById('showOverlay');
+            const testResults = document.getElementById('testResults');
+            
+            // Transformation matrix from calibration
+            const transformMatrix = [
+                [1.0926956230045957, -0.17260179709250867, -10.707820290652863],
+                [-0.00586731122412406, 1.0575371860597218, -44.00448170690642],
+                [0.00014256299181938662, -0.0008035537823504151, 1.0]
+            ];
+            
+            // Apply transformation to SVG overlay
+            function applyTransformation() {
+                if (!svgOverlay || !wallImage) return;
+                
+                // Wait for images to load
+                if (!wallImage.complete || !svgOverlay.complete) {
+                    setTimeout(applyTransformation, 100);
+                    return;
+                }
+                
+                // Get dimensions
+                const wallRect = wallImage.getBoundingClientRect();
+                const svgRect = svgOverlay.getBoundingClientRect();
+                
+                // Calculate scale factors
+                const scaleX = wallRect.width / svgRect.width;
+                const scaleY = wallRect.height / svgRect.height;
+                
+                // Apply CSS transform with matrix3d for proper perspective transformation
+                // Convert 3x3 matrix to 4x4 for CSS
+                const h11 = transformMatrix[0][0], h12 = transformMatrix[0][1], h13 = transformMatrix[0][2];
+                const h21 = transformMatrix[1][0], h22 = transformMatrix[1][1], h23 = transformMatrix[1][2];
+                const h31 = transformMatrix[2][0], h32 = transformMatrix[2][1]; // h33 = 1
+                
+                // Build 4x4 matrix for CSS matrix3d (column-major order)
+                const cssMatrix = [
+                    h11 * scaleX, h21 * scaleY, 0, h31,
+                    h12 * scaleX, h22 * scaleY, 0, h32,
+                    0, 0, 1, 0,
+                    h13 * scaleX, h23 * scaleY, 0, 1
+                ];
+                
+                svgOverlay.style.transform = `matrix3d(${cssMatrix.join(', ')})`;
+                svgOverlay.style.transformOrigin = '0 0';
+                svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+                
+                // Update test results
+                testResults.innerHTML = `
+                    <strong>Transformation Applied:</strong><br>
+                    Scale factors: X=${scaleX.toFixed(3)}, Y=${scaleY.toFixed(3)}<br>
+                    Wall dimensions: ${wallRect.width.toFixed(0)}x${wallRect.height.toFixed(0)}<br>
+                    SVG dimensions: ${svgRect.width.toFixed(0)}x${svgRect.height.toFixed(0)}<br>
+                    CSS Matrix: matrix3d(${cssMatrix.map(n => n.toFixed(6)).join(', ')})
+                `;
+            }
+            
+            // Reset transformation
+            function resetTransformation() {
+                if (!svgOverlay) return;
+                svgOverlay.style.transform = 'none';
+                svgOverlay.style.transformOrigin = '0 0';
+                testResults.innerHTML = 'Transformation reset. Click "Apply Transform" to test again.';
+            }
+            
+            // Toggle overlay visibility
+            function toggleOverlay() {
+                if (!svgOverlay) return;
+                svgOverlay.style.opacity = showCheckbox.checked ? '0.75' : '0';
+            }
+            
+            // Event listeners
+            if (applyBtn) applyBtn.addEventListener('click', applyTransformation);
+            if (resetBtn) resetBtn.addEventListener('click', resetTransformation);
+            if (showCheckbox) showCheckbox.addEventListener('change', toggleOverlay);
+            
+            // Apply transformation on load
+            if (wallImage && svgOverlay) {
+                wallImage.addEventListener('load', applyTransformation);
+                svgOverlay.addEventListener('load', applyTransformation);
+                
+                // Apply after a short delay to ensure images are loaded
+                setTimeout(applyTransformation, 500);
+            }
+        });
+    </script>
+</body>
+</html>

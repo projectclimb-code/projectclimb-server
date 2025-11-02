@@ -5,24 +5,156 @@
 {% block content %}
   <h1 class="text-2xl font-bold mb-4">Camera Stream</h1>
 
-  <!-- Form to input external stream URL -->
-  <form method="get" action="{% url 'camera' %}" class="bg-white shadow-md rounded-lg p-6 mb-6">
+  <!-- Stream source selection -->
+  <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+    <h2 class="text-xl font-semibold mb-4">Stream Source</h2>
+    
+    <!-- Radio buttons for stream source selection -->
     <div class="mb-4">
-        <label for="stream_url_input" class="block text-gray-700 text-sm font-bold mb-2">External Stream URL (e.g., from go2rtc):</label>
-        <input type="url" name="stream_url" id="stream_url_input" value="{{ stream_url|default:'' }}" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" placeholder="http://<host>:<port>/stream.mjpeg">
+      <label class="block text-gray-700 text-sm font-bold mb-2">Select Stream Source:</label>
+      <div class="space-y-2">
+        <label class="inline-flex items-center">
+          <input type="radio" name="stream_source" value="go2rtc" checked class="form-radio">
+          <span class="ml-2">go2rtc Stream (Recommended)</span>
+        </label>
+        <label class="inline-flex items-center">
+          <input type="radio" name="stream_source" value="direct" class="form-radio">
+          <span class="ml-2">Direct Camera Feed</span>
+        </label>
+        <label class="inline-flex items-center">
+          <input type="radio" name="stream_source" value="external" class="form-radio">
+          <span class="ml-2">External Stream URL</span>
+        </label>
+      </div>
     </div>
+    
+    <!-- External URL input (shown when external is selected) -->
+    <div id="external_url_input" class="mb-4 hidden">
+      <label for="stream_url_input" class="block text-gray-700 text-sm font-bold mb-2">External Stream URL:</label>
+      <input type="url" name="stream_url" id="stream_url_input" value="{{ stream_url|default:'' }}" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" placeholder="http://<host>:<port>/stream.mjpeg">
+    </div>
+    
     <div class="flex items-center justify-between">
-        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-            Load External Stream
+        <button type="button" id="apply_stream_source" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+            Apply Stream Source
         </button>
-        <a href="{% url 'camera' %}" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
-            Load Local Camera
-        </a>
+        <div class="text-sm text-gray-600">
+          <span id="stream_status" class="inline-block px-2 py-1 rounded bg-gray-200">Checking status...</span>
+        </div>
     </div>
-  </form>
+  </div>
 
   <!-- Video Display -->
   <div class="w-full max-w-4xl mx-auto border border-gray-300 rounded-lg overflow-hidden">
-    <img src="{% if stream_url %}{{ stream_url }}{% else %}{% url 'video_feed' %}{% endif %}" alt="Camera stream" class="w-full">
+    <video id="video_player" controls autoplay class="w-full" src="{{ go2rtc_stream_url }}">
+      Your browser does not support the video tag.
+    </video>
   </div>
+  
+  <!-- Stream Information -->
+  <div class="mt-4 bg-white shadow-md rounded-lg p-6">
+    <h3 class="text-lg font-semibold mb-2">Stream Information</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div>
+        <span class="font-medium">Current Source:</span>
+        <span id="current_source">go2rtc</span>
+      </div>
+      <div>
+        <span class="font-medium">Stream URL:</span>
+        <span id="current_url" class="break-all">{{ go2rtc_stream_url }}</span>
+      </div>
+      <div>
+        <span class="font-medium">go2rtc API:</span>
+        <span id="go2rtc_status" class="break-all">{{ go2rtc_api_url }}</span>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const videoPlayer = document.getElementById('video_player');
+  const streamSourceRadios = document.querySelectorAll('input[name="stream_source"]');
+  const externalUrlInput = document.getElementById('external_url_input');
+  const applyButton = document.getElementById('apply_stream_source');
+  const currentSourceSpan = document.getElementById('current_source');
+  const currentUrlSpan = document.getElementById('current_url');
+  const streamStatusSpan = document.getElementById('stream_status');
+  const go2rtcStatusSpan = document.getElementById('go2rtc_status');
+  
+  const go2rtcStreamUrl = "{{ go2rtc_stream_url }}";
+  const localStreamUrl = "{% url 'video_feed' %}";
+  const go2rtcApiUrl = "{{ go2rtc_api_url }}";
+  
+  // Check stream status
+  async function checkStreamStatus(url) {
+    try {
+      const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+      streamStatusSpan.textContent = 'Active';
+      streamStatusSpan.className = 'inline-block px-2 py-1 rounded bg-green-200 text-green-800';
+    } catch (error) {
+      streamStatusSpan.textContent = 'Unavailable';
+      streamStatusSpan.className = 'inline-block px-2 py-1 rounded bg-red-200 text-red-800';
+    }
+  }
+  
+  // Check go2rtc status
+  async function checkGo2RTCStatus() {
+    try {
+      const response = await fetch(go2rtcApiUrl);
+      const data = await response.json();
+      go2rtcStatusSpan.textContent = 'Connected';
+      go2rtcStatusSpan.className = 'inline-block px-2 py-1 rounded bg-green-200 text-green-800';
+    } catch (error) {
+      go2rtcStatusSpan.textContent = 'Disconnected';
+      go2rtcStatusSpan.className = 'inline-block px-2 py-1 rounded bg-red-200 text-red-800';
+    }
+  }
+  
+  // Handle stream source change
+  streamSourceRadios.forEach(radio => {
+    radio.addEventListener('change', function() {
+      if (this.value === 'external') {
+        externalUrlInput.classList.remove('hidden');
+      } else {
+        externalUrlInput.classList.add('hidden');
+      }
+    });
+  });
+  
+  // Apply stream source
+  applyButton.addEventListener('click', function() {
+    const selectedSource = document.querySelector('input[name="stream_source"]:checked').value;
+    
+    switch (selectedSource) {
+      case 'go2rtc':
+        videoPlayer.src = go2rtcStreamUrl;
+        currentSourceSpan.textContent = 'go2rtc';
+        currentUrlSpan.textContent = go2rtcStreamUrl;
+        checkStreamStatus(go2rtcStreamUrl);
+        break;
+      case 'direct':
+        videoPlayer.src = localStreamUrl;
+        currentSourceSpan.textContent = 'Direct Camera';
+        currentUrlSpan.textContent = localStreamUrl;
+        checkStreamStatus(localStreamUrl);
+        break;
+      case 'external':
+        const externalUrl = document.getElementById('stream_url_input').value;
+        if (externalUrl) {
+          videoPlayer.src = externalUrl;
+          currentSourceSpan.textContent = 'External URL';
+          currentUrlSpan.textContent = externalUrl;
+          checkStreamStatus(externalUrl);
+        }
+        break;
+    }
+  });
+  
+  // Initialize
+  checkGo2RTCStatus();
+  checkStreamStatus(go2rtcStreamUrl);
+});
+</script>
 {% endblock %}

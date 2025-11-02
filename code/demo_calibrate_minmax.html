@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vanilla JS App (No React)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #11141b;
+      --text: #e9eef5;
+      --muted: #9aa6b2;
+      --brand: #4f8cff;
+      --brand-2: #82b1ff;
+      --border: #1a2030;
+      --success: #3ddc97;
+      --danger: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: linear-gradient(180deg, #0b0d12 0%, #0e1016 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      background: rgba(17,20,27,0.7);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      max-width: 960px; margin: 0 auto; padding: 14px 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.2px; }
+    .brand-badge {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      display: grid; place-items: center; color: #0b0d12; font-weight: 900; font-size: 14px;
+      box-shadow: 0 8px 20px rgba(79,140,255,0.35);
+    }
+    .links { display: flex; gap: 8px; }
+    .link {
+      padding: 8px 12px; border-radius: 8px; color: var(--text); text-decoration: none;
+      border: 1px solid transparent;
+    }
+    .link:hover { background: #151a24; }
+    .link.active { border-color: #2a3448; background: #121622; }
+    main { max-width: 960px; width: 100%; margin: 24px auto; padding: 0 16px 40px; flex: 1; }
+    .panel {
+      background: linear-gradient(180deg, #0f131b 0%, #0e1219 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+    h1, h2, h3 { margin: 0 0 14px; }
+    p { color: var(--muted); margin: 0 0 10px; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .spacer { height: 12px; }
+    .btn {
+      border: 1px solid #2a3448; background: #141a27; color: var(--text);
+      padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 600;
+    }
+    .btn:hover { background: #111827; }
+    .btn.brand { border-color: #355aa7; background: #1a2944; color: #dbe9ff; }
+    .btn.brand:hover { background: #1a2f53; }
+    .btn.ghost { background: transparent; border-color: #2a3448; }
+    .btn.danger { border-color: #65333a; background: #2a1417; color: #ffd9de; }
+    .btn.danger:hover { background: #3a1b20; }
+    .input {
+      border: 1px solid #2a3448; background: #0f1420; color: var(--text);
+      padding: 10px 12px; border-radius: 8px; outline: none; min-width: 240px;
+    }
+    .input:focus { border-color: #3b4f79; box-shadow: 0 0 0 3px rgba(79,140,255,0.15); }
+    .counter { display: inline-flex; align-items: center; gap: 8px; }
+    .count {
+      font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0.5px;
+      padding: 8px 14px; border-radius: 10px; background: #0f1420; border: 1px solid #2a3448; min-width: 70px; text-align: center;
+    }
+    .filters { display: flex; gap: 8px; }
+    .muted { color: var(--muted); }
+    ul.todos { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+    .todo {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;
+      padding: 10px 12px; border: 1px solid #20283a; border-radius: 10px; background: #0e131d;
+    }
+    .todo.completed .text { text-decoration: line-through; color: #95a2b3; }
+    .todo .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .checkbox {
+      width: 18px; height: 18px; accent-color: #4f8cff; cursor: pointer;
+    }
+    .empty { padding: 16px; text-align: center; color: var(--muted); border: 1px dashed #273149; border-radius: 12px; background: #0d1320; }
+    footer { color: var(--muted); font-size: 13px; text-align: center; padding: 16px; border-top: 1px solid var(--border); }
+    code.inline { background: #0f1420; border: 1px solid #2a3448; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <div class="brand">
+        <div class="brand-badge">V</div>
+        <div>Vanilla JS App</div>
+      </div>
+      <div class="links">
+        <a href="/" data-link class="link" data-route="/">Home</a>
+        <a href="/counter" data-link class="link" data-route="/counter">Counter</a>
+        <a href="/todos" data-link class="link" data-route="/todos">Todos</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="app"></main>
+
+  <footer>No React. No frameworks. Just HTML + Vanilla JS.</footer>
+
+  <script>
+    // Simple hash-based router (works from file:// and static hosts)
+    const app = document.getElementById('app');
+    const routes = [];
+    let current = null;
+
+    function addRoute(pattern, loader) {
+      routes.push({ pattern, loader });
+    }
+
+    function compilePattern(pattern) {
+      // Supports "/todos/:id" style params
+      const parts = pattern.split('/').filter(Boolean);
+      const names = [];
+      const regexParts = parts.map(p => {
+        if (p.startsWith(':')) {
+          names.push(p.slice(1));
+          return '([^/]+)';
+        }
+        return p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      });
+      const regex = new RegExp('^/' + regexParts.join('/') + '$');
+      return { regex, names };
+    }
+
+    function matchRoute(pathname) {
+      for (const r of routes) {
+        if (!r._c) r._c = compilePattern(r.pattern);
+        const m = pathname.match(r._c.regex);
+        if (m) {
+          const params = {};
+          r._c.names.forEach((n, i) => params[n] = decodeURIComponent(m[i + 1]));
+          return { route: r, params };
+        }
+      }
+      return null;
+    }
+
+    function parseQuery(search) {
+      const out = {};
+      if (!search) return out;
+      const sp = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+      for (const [k, v] of sp) out[k] = v;
+      return out;
+    }
+
+    function stringifyQuery(obj) {
+      const sp = new URLSearchParams();
+      Object.entries(obj || {}).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
+      });
+      const s = sp.toString();
+      return s ? '?' + s : '';
+    }
+
+    function setActiveNav(pathname) {
+      document.querySelectorAll('[data-link][data-route]').forEach(a => {
+        const route = a.getAttribute('data-route');
+        // Normalize trailing slash handling for active detection
+        const clean = p => p.replace(/\/+$/, '') || '/';
+        a.classList.toggle('active', clean(pathname) === clean(route));
+      });
+    }
+
+    function navigate(path, { replace = false } = {}) {
+      const hash = path.startsWith('#') ? path : ('#' + path);
+      if (replace) {
+        history.replaceState(null, '', hash);
+      } else {
+        location.hash = hash;
+      }
+    }
+
+    function handleLocation() {
+      const hash = location.hash || '#/';
+      const [pathnameRaw, search = ''] = hash.slice(1).split('?');
+      const pathname = pathnameRaw || '/';
+      const query = parseQuery(search ? '?' + search : '');
+      setActiveNav(pathname);
+
+      const m = matchRoute(pathname);
+      if (!m) {
+        renderNotFound(pathname);
+        return;
+      }
+
+      // Cleanup previous view
+      if (current && typeof current.cleanup === 'function') {
+        try { current.cleanup(); } catch {}
+      }
+
+      const view = m.route.loader({ params: m.params, query, navigate });
+      // Support either a DOM node or an object with node + cleanup
+      const node = view && view.node ? view.node : view;
+      if (!node) {
+        renderNotFound(pathname);
+        return;
+      }
+      current = view;
+      app.replaceChildren(node);
+      if (typeof view.mount === 'function') {
+        try { view.mount(); } catch {}
+      }
+    }
+
+    function renderNotFound(pathname) {
+      const el = document.createElement('div');
+      el.className = 'panel';
+      el.innerHTML = `
+        <h2>404</h2>
+        <p>No route matches <code class="inline">${escapeHtml(pathname)}</code>.</p>
+        <div class="spacer"></div>
+        <button class="btn brand" id="goHome">Go Home</button>
+      `;
+      el.querySelector('#goHome').addEventListener('click', () => navigate('/'));
+      app.replaceChildren(el);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    // Event delegation for app-wide interactions (e.g., <form>, <a data-link>)
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[data-link]');
+      if (a && a.getAttribute('href')) {
+        e.preventDefault();
+        const href = a.getAttribute('href');
+        navigate(href);
+      }
+    });
+
+    window.addEventListener('hashchange', handleLocation);
+    window.addEventListener('DOMContentLoaded', handleLocation);
+
+    // Pages
+    addRoute('/', () => HomePage());
+    addRoute('/counter', () => CounterPage());
+    addRoute('/todos', () => TodosPage());
+    addRoute('/todos/:id', ({ params }) => TodosPage({ focusId: params.id }));
+
+    function HomePage() {
+      const el = document.createElement('div');
+      el.className = 'panel';
+      el.innerHTML = `
+        <h2>Welcome</h2>
+        <p>This is a tiny, framework-free single-page app.</p>
+        <ul>
+          <li>No React. Just HTML + Vanilla JS.</li>
+          <li>Client-side hash router with params and query parsing.</li>
+          <li>Examples: counter with persistence, and todos with filters.</li>
+        </ul>
+        <div class="spacer"></div>
+        <div class="row">
+          <a class="btn brand" href="/counter" data-link>Open Counter</a>
+          <a class="btn" href="/todos" data-link>Open Todos</a>
+        </div>
+      `;
+      return { node: el };
+    }
+
+    function CounterPage() {
+      const KEY = 'vanilla.counter';
+      const getCount = () => Number(localStorage.getItem(KEY) || 0);
+      const setCount = (n) => localStorage.setItem(KEY, String(n));
+
+      let count = getCount();
+
+      const el = document.createElement('div');
+      el.className = 'panel';
+      const counter = (value) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'counter';
+        const minus = document.createElement('button');
+        minus.className = 'btn';
+        minus.textContent = '−';
+        const c = document.createElement('div');
+        c.className = 'count';
+        c.textContent = value;
+        const plus = document.createElement('button');
+        plus.className = 'btn';
+        plus.textContent = '+';
+        minus.addEventListener('click', () => { count -= 1; setCount(count); c.textContent = count; });
+        plus.addEventListener('click', () => { count += 1; setCount(count); c.textContent = count; });
+        wrap.append(minus, c, plus);
+        return wrap;
+      };
+
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'btn ghost';
+      resetBtn.textContent = 'Reset';
+      resetBtn.addEventListener('click', () => {
+        count = 0; setCount(count);
+        c.textContent = count;
+      });
+
+      const title = document.createElement('h2');
+      title.textContent = 'Counter';
+      const info = document.createElement('p');
+      info.textContent = 'The count is persisted in localStorage.';
+      const c = document.createElement('div');
+      c.className = 'count'; c.textContent = count;
+
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.append(resetBtn);
+
+      el.append(title, info, counter(count), document.createElement('div'), row);
+
+      return { node: el };
+    }
+
+    function TodosPage({ focusId } = {}) {
+      const STORAGE_KEY = 'vanilla.todos';
+
+      const state = {
+        todos: loadTodos(),
+        filter: 'all', // 'all' | 'active' | 'completed'
+        draft: ''
+      };
+
+      const el = document.createElement('div');
+      el.className = 'panel';
+
+      const title = document.createElement('h2');
+      title.textContent = 'Todos';
+
+      const form = document.createElement('form');
+      form.className = 'row';
+      form.autocomplete = 'off';
+
+      const input = document.createElement('input');
+      input.className = 'input';
+      input.placeholder = 'Add a todo...';
+      input.value = state.draft;
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn brand';
+      addBtn.textContent = 'Add';
+
+      form.append(input, addBtn);
+
+      const filtersWrap = document.createElement('div');
+      filtersWrap.className = 'filters';
+      const mkFilterBtn = (name) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn';
+        b.textContent = name[0].toUpperCase() + name.slice(1);
+        b.dataset.filter = name;
+        if (state.filter === name) b.classList.add('brand');
+        return b;
+      };
+      const btnAll = mkFilterBtn('all');
+      const btnActive = mkFilterBtn('active');
+      const btnCompleted = mkFilterBtn('completed');
+      const clearCompleted = document.createElement('button');
+      clearCompleted.type = 'button';
+      clearCompleted.className = 'btn danger';
+      clearCompleted.textContent = 'Clear completed';
+
+      filtersWrap.append(btnAll, btnActive, btnCompleted, clearCompleted);
+
+      const list = document.createElement('ul');
+      list.className = 'todos';
+      renderList();
+
+      el.append(title, form, document.createElement('div'), filtersWrap, document.createElement('div'), list);
+
+      function loadTodos() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr) ? arr : [];
+        } catch { return []; }
+      }
+      function saveTodos() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.todos));
+      }
+      function uid() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      }
+
+      function filteredTodos() {
+        if (state.filter === 'active') return state.todos.filter(t => !t.completed);
+        if (state.filter === 'completed') return state.todos.filter(t => t.completed);
+        return state.todos;
+      }
+
+      function renderList() {
+        list.replaceChildren();
+        const items = filteredTodos();
+        if (items.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = state.filter === 'all'
+            ? 'No todos yet. Add one above.'
+            : `No ${state.filter} todos.`;
+          list.append(empty);
+          return;
+        }
+        for (const t of items) {
+          const li = document.createElement('li');
+          li.className = 'todo' + (t.completed ? ' completed' : '');
+          li.dataset.id = t.id;
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.className = 'checkbox';
+          checkbox.checked = t.completed;
+
+          const text = document.createElement('div');
+          text.className = 'text';
+          text.textContent = t.text;
+
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'btn danger';
+          del.textContent = 'Delete';
+
+          li.append(checkbox, text, del);
+          list.append(li);
+        }
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        state.todos.unshift({ id: uid(), text, completed: false });
+        state.draft = '';
+        input.value = '';
+        saveTodos();
+        renderList();
+      });
+
+      filtersWrap.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.filter) {
+          state.filter = b.dataset.filter;
+          // Update filter buttons styles
+          [btnAll, btnActive, btnCompleted].forEach(btn => {
+            btn.classList.toggle('brand', btn === b);
+          });
+          renderList();
+        } else if (b === clearCompleted) {
+          const before = state.todos.length;
+          state.todos = state.todos.filter(t => !t.completed);
+          if (state.todos.length !== before) {
+            saveTodos();
+            renderList();
+          }
+        }
+      });
+
+      list.addEventListener('change', (e) => {
+        const cb = e.target.closest('input.checkbox');
+        if (!cb) return;
+        const li = cb.closest('li');
+        const id = li?.dataset?.id;
+        if (!id) return;
+        const t = state.todos.find(x => x.id === id);
+        if (!t) return;
+        t.completed = cb.checked;
+        li.classList.toggle('completed', t.completed);
+        saveTodos();
+      });
+
+      list.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const li = btn.closest('li');
+        const id = li?.dataset?.id;
+        if (!id) return;
+        const idx = state.todos.findIndex(x => x.id === id);
+        if (idx === -1) return;
+        state.todos.splice(idx, 1);
+        saveTodos();
+        li.remove();
+      });
+
+      function mount() {
+        // Optional: focus the input or a specific todo by id
+        if (focusId) {
+          const li = list.querySelector(`li[data-id="${focusId}"]`);
+          if (li) {
+            // Flash effect
+            li.style.outline = '2px solid var(--brand)';
+            setTimeout(() => li.style.outline = '', 600);
+          }
+        } else {
+          input.focus();
+        }
+      }
+
+      return { node: el, mount };
+    }
+  </script>
+</body>
+</html>

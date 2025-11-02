@@ -2,18 +2,619 @@
 
 {% block title %}Wall: {{ wall.name }}{% endblock title %}
 
+{% block extra_css %}
+<style>
+.svg-overlay-container {
+    position: relative;
+    overflow: hidden;
+}
+
+.svg-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+}
+
+.calibration-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    border-radius: 5px;
+    color: white;
+}
+
+.overlay-status {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 8px;
+    border-radius: 4px;
+    color: white;
+    font-size: 12px;
+}
+
+.loading-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
+</style>
+{% endblock extra_css %}
+
 {% block content %}
 <h1 class="text-3xl font-semibold text-gray-800 mb-4">Wall: {{ wall.name }}</h1>
-<div class="bg-white shadow-md rounded-lg p-6">
+<div class="bg-white shadow-md rounded-lg p-6 mb-6">
     <p class="text-gray-700 mb-2"><strong class="font-semibold">Name:</strong> {{ wall.name }}</p>
     <p class="text-gray-700 mb-2"><strong class="font-semibold">Venue:</strong> <a href="{% url 'venue_detail' wall.venue.uuid %}" class="text-blue-600 hover:underline">{{ wall.venue.name }}</a></p>
     <p class="text-gray-700 mb-2"><strong class="font-semibold">UUID:</strong> {{ wall.uuid }}</p>
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">Dimensions:</strong> {{ wall.width_mm }}mm × {{ wall.height_mm }}mm</p>
     <p class="text-gray-700 mb-2"><strong class="font-semibold">Created:</strong> {{ wall.created|date:"Y-m-d H:i:s" }}</p>
     <p class="text-gray-700 mb-4"><strong class="font-semibold">Updated:</strong> {{ wall.updated|date:"Y-m-d H:i:s" }}</p>
+    
+    {% if wall.svg_file %}
+    <p class="text-gray-700 mb-2"><strong class="font-semibold">SVG File:</strong>
+        <a href="{{ wall.svg_file.url }}" class="text-blue-600 hover:underline" target="_blank">View SVG</a>
+    </p>
+    {% else %}
+    <p class="text-yellow-700 mb-2"><strong class="font-semibold">SVG File:</strong>
+        <span class="text-yellow-600">No SVG file uploaded</span>
+    </p>
+    {% endif %}
+    
+    <!-- SVG Upload Form -->
+    <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+        <h3 class="text-lg font-semibold text-gray-800 mb-3">Upload SVG File</h3>
+        <form method="post" enctype="multipart/form-data" action="{% url 'wall_upload_svg' wall.uuid %}" class="space-y-3">
+            {% csrf_token %}
+            <div>
+                <label for="svg_file" class="block text-sm font-medium text-gray-700 mb-1">
+                    Select SVG File
+                </label>
+                <input type="file"
+                       id="svg_file"
+                       name="svg_file"
+                       accept=".svg,image/svg+xml"
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                <p class="text-xs text-gray-500 mt-1">Upload an SVG file containing climbing holds and ArUco markers</p>
+            </div>
+            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                Upload SVG
+            </button>
+        </form>
+    </div>
+    
+    <!-- Wall Image Upload Section -->
+    <div id="wall-image-upload" class="mt-6 p-4 bg-gray-50 rounded-lg">
+        <h3 class="text-lg font-semibold text-gray-800 mb-3">Wall Image</h3>
+        
+        {% if wall.wall_image %}
+        <div class="mb-4">
+            <p class="text-sm text-gray-600 mb-2">Current wall image:</p>
+            <img src="{{ wall.wall_image.url }}" alt="Wall Image" class="max-w-full h-auto rounded-lg shadow-md" style="max-height: 300px;">
+        </div>
+        {% endif %}
+        
+        <!-- Drag and Drop Upload Area -->
+        <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+            <div id="drop-content">
+                <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <p class="text-gray-600 mb-2">Drag and drop an image here, or click to select</p>
+                <p class="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
+                <input type="file" id="file-input" accept="image/*" class="hidden">
+            </div>
+            
+            <!-- Camera Capture Section -->
+            <div id="camera-section" class="hidden">
+                <video id="camera-video" class="w-full max-w-md mx-auto rounded-lg mb-3" autoplay></video>
+                <div class="flex justify-center space-x-3">
+                    <button id="capture-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                        Capture Photo
+                    </button>
+                    <button id="cancel-camera-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Upload Buttons -->
+            <div id="upload-buttons" class="flex justify-center space-x-3 mt-4">
+                <button id="upload-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                    Upload Image
+                </button>
+                <button id="camera-btn" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded">
+                    Use Camera
+                </button>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div id="upload-progress" class="hidden mt-4">
+            <div class="bg-gray-200 rounded-full h-2.5">
+                <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <p id="upload-status" class="text-sm text-gray-600 mt-2 text-center">Uploading...</p>
+        </div>
+        
+        <!-- Success/Error Messages -->
+        <div id="upload-message" class="hidden mt-4 p-3 rounded-lg"></div>
+    </div>
+    
     <div class="mt-6">
-        <a href="{% url 'wall_update' wall.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a> {# Use .uuid #}
-        <a href="{% url 'wall_delete' wall.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</a> {# Use .uuid #}
+        <a href="{% url 'wall_update' wall.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a>
+        <a href="{% url 'wall_delete' wall.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mr-2">Delete</a>
+        <a href="{% url 'wall_calibration_list' wall.pk %}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">Manage Calibrations</a>
+        {% if wall.svg_file %}
+        <a href="{% url 'calibration_draggable_svg' wall.pk %}" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mr-2">Draggable SVG Calibration</a>
+        {% endif %}
         <a href="{% url 'wall_list' %}" class="text-blue-500 hover:underline ml-4">Back to list</a>
     </div>
 </div>
+
+<!-- Calibration Status -->
+<div class="bg-white shadow-md rounded-lg p-6">
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">Calibration Status</h2>
+    
+    {% if wall.active_calibration %}
+    <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-4">
+        <p class="font-bold">Active Calibration</p>
+        <p><strong>{{ wall.active_calibration.name }}</strong></p>
+        <p>Created: {{ wall.active_calibration.created|date:"Y-m-d H:i" }}</p>
+        <p>Reprojection Error: {{ wall.active_calibration.reprojection_error|floatformat:2 }}px</p>
+        <div class="mt-2">
+            <a href="{% url 'calibration_detail' wall.pk wall.active_calibration.pk %}" class="text-green-600 hover:text-green-800 underline">View Details</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
+        <p class="font-bold">No Active Calibration</p>
+        <p>This wall has no active calibration. Create a calibration to enable pose tracking and touch detection.</p>
+        <div class="mt-2">
+            <a href="{% url 'calibration_create' wall.pk %}" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm">Create Calibration</a>
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="mt-4">
+        <a href="{% url 'wall_calibration_list' wall.pk %}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+            View All Calibrations ({{ wall.calibrations.count }})
+        </a>
+    </div>
+</div>
+
+<!-- SVG Overlay Section -->
+<div class="bg-white shadow-md rounded-lg p-6 mt-6">
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">SVG Overlay Visualization</h2>
+    
+    {% if wall.svg_file and wall.active_calibration and wall.wall_image or wall.svg_file and wall.active_calibration and wall.active_calibration.calibration_image %}
+    <div class="mb-4">
+        <button id="toggle-svg-overlay" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+            Show SVG Overlay
+        </button>
+        <button id="reset-svg-overlay" class="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded ml-2">
+            Reset View
+        </button>
+    </div>
+    
+    <div id="svg-overlay-container" class="relative border-2 border-gray-300 rounded-lg overflow-hidden" style="display: none; height: 600px;">
+        <!-- Wall Image -->
+        <img id="wall-image" src="{% if wall.wall_image %}{{ wall.wall_image.url }}{% elif wall.active_calibration.calibration_image %}{{ wall.active_calibration.calibration_image.url }}{% else %}/static/images/default-wall.jpg{% endif %}"
+             alt="Wall Image" class="w-full h-full object-contain">
+        
+        <!-- SVG Overlay -->
+        <div id="svg-wrapper" class="absolute inset-0 pointer-events-none">
+            <svg id="svg-overlay" class="w-full h-full" style="mix-blend-mode: multiply;">
+                <!-- SVG content will be loaded here -->
+            </svg>
+        </div>
+        
+        <!-- Status Display -->
+        <div id="overlay-status" class="absolute top-2 left-2 bg-black bg-opacity-50 text-white p-2 rounded text-sm">
+            <div>Calibration: {{ wall.active_calibration.name }}</div>
+            <div>Error: {{ wall.active_calibration.reprojection_error|floatformat:2 }}px</div>
+        </div>
+    </div>
+    
+    <div id="svg-overlay-error" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4">
+        <p class="font-bold">Error Loading SVG Overlay</p>
+        <p id="error-message"></p>
+    </div>
+    
+    {% else %}
+    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
+        <p class="font-bold">SVG Overlay Not Available</p>
+        <p>
+            {% if not wall.svg_file %}
+                No SVG file uploaded.
+                <a href="{% url 'wall_detail' wall.uuid %}#svg-upload" class="text-yellow-600 hover:text-yellow-800 underline">Upload an SVG file</a>.
+            {% endif %}
+            {% if not wall.active_calibration %}
+                {% if wall.svg_file %} and {% endif %}
+                No active calibration.
+                <a href="{% url 'calibration_create' wall.pk %}" class="text-yellow-600 hover:text-yellow-800 underline">Create a calibration</a>.
+            {% endif %}
+            {% if wall.svg_file and wall.active_calibration and not wall.wall_image and not wall.active_calibration.calibration_image %}
+                {% if wall.svg_file or wall.active_calibration %} and {% endif %}
+                No wall image available.
+                <a href="{% url 'wall_detail' wall.uuid %}#wall-image-upload" class="text-yellow-600 hover:text-yellow-800 underline">Upload a wall image</a> or ensure calibration has an image.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+{% if wall.svg_file and wall.active_calibration %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const wallId = "{{ wall.uuid }}";
+    const toggleButton = document.getElementById('toggle-svg-overlay');
+    const resetButton = document.getElementById('reset-svg-overlay');
+    const container = document.getElementById('svg-overlay-container');
+    const svgOverlay = document.getElementById('svg-overlay');
+    const wallImage = document.getElementById('wall-image');
+    const errorDiv = document.getElementById('svg-overlay-error');
+    const errorMessage = document.getElementById('error-message');
+    
+    let isOverlayVisible = false;
+    let calibrationData = null;
+    
+    // Fetch calibration data
+    async function fetchCalibrationData() {
+        try {
+            const response = await fetch(`/calibration/wall/{{ wall.pk }}/svg-data/`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            
+            // Check if the response contains an error
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            calibrationData = data;
+            return calibrationData;
+        } catch (error) {
+            console.error('Error fetching calibration data:', error);
+            showError(`Failed to load calibration data: ${error.message}`);
+            return null;
+        }
+    }
+    
+    // Load SVG content
+    async function loadSVGContent() {
+        try {
+            if (!calibrationData) {
+                await fetchCalibrationData();
+            }
+            
+            if (!calibrationData || !calibrationData.success) {
+                throw new Error('No calibration data available');
+            }
+            
+            // Update wall image source if available from API
+            if (calibrationData.wall_image_url) {
+                wallImage.src = calibrationData.wall_image_url;
+            }
+            
+            // Fetch SVG content
+            const svgResponse = await fetch(calibrationData.svg_url);
+            if (!svgResponse.ok) {
+                throw new Error(`HTTP error! status: ${svgResponse.status}`);
+            }
+            
+            const svgText = await svgResponse.text();
+            svgOverlay.innerHTML = svgText;
+            
+            // Apply calibration transformation
+            applyCalibrationTransform();
+            
+            return true;
+        } catch (error) {
+            console.error('Error loading SVG:', error);
+            showError(`Failed to load SVG: ${error.message}`);
+            return false;
+        }
+    }
+    
+    // Apply calibration transformation to SVG
+    function applyCalibrationTransform() {
+        if (!calibrationData || !calibrationData.calibration) {
+            return;
+        }
+        
+        const transform = calibrationData.calibration.perspective_transform;
+        const svgWidth = calibrationData.svg_width;
+        const svgHeight = calibrationData.svg_height;
+        
+        // Get the wall image dimensions
+        const imgRect = wallImage.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        
+        // Calculate scale factors
+        const scaleX = imgRect.width / svgWidth;
+        const scaleY = imgRect.height / svgHeight;
+        
+        // Apply transformation to SVG root element
+        const svgRoot = svgOverlay.querySelector('svg');
+        if (svgRoot) {
+            // Set viewBox to match SVG dimensions
+            svgRoot.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+            
+            // Apply scaling to fit the image
+            svgRoot.style.transform = `scale(${scaleX}, ${scaleY})`;
+            svgRoot.style.transformOrigin = 'top left';
+        }
+    }
+    
+    // Toggle overlay visibility
+    toggleButton.addEventListener('click', async function() {
+        if (!isOverlayVisible) {
+            // Show loading indicator
+            showLoading();
+            
+            // Load SVG content if not already loaded
+            const success = await loadSVGContent();
+            
+            if (success) {
+                container.style.display = 'block';
+                toggleButton.textContent = 'Hide SVG Overlay';
+                isOverlayVisible = true;
+            }
+            
+            hideLoading();
+        } else {
+            container.style.display = 'none';
+            toggleButton.textContent = 'Show SVG Overlay';
+            isOverlayVisible = false;
+        }
+    });
+    
+    // Reset view
+    resetButton.addEventListener('click', function() {
+        if (isOverlayVisible) {
+            applyCalibrationTransform();
+        }
+    });
+    
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        if (isOverlayVisible) {
+            applyCalibrationTransform();
+        }
+    });
+    
+    // Show error message
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorDiv.classList.remove('hidden');
+        container.style.display = 'none';
+        toggleButton.textContent = 'Show SVG Overlay';
+        isOverlayVisible = false;
+    }
+    
+    // Show loading indicator
+    function showLoading() {
+        const loading = document.createElement('div');
+        loading.id = 'loading-indicator';
+        loading.className = 'loading-indicator';
+        loading.textContent = 'Loading SVG...';
+        container.appendChild(loading);
+    }
+    
+    // Hide loading indicator
+    function hideLoading() {
+        const loading = document.getElementById('loading-indicator');
+        if (loading) {
+            loading.remove();
+        }
+    }
+});
+</script>
+{% endif %}
+
+<!-- Wall Image Upload JavaScript -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const wallId = "{{ wall.uuid }}";
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.getElementById('upload-btn');
+    const cameraBtn = document.getElementById('camera-btn');
+    const cameraSection = document.getElementById('camera-section');
+    const dropContent = document.getElementById('drop-content');
+    const uploadButtons = document.getElementById('upload-buttons');
+    const cameraVideo = document.getElementById('camera-video');
+    const captureBtn = document.getElementById('capture-btn');
+    const cancelCameraBtn = document.getElementById('cancel-camera-btn');
+    const uploadProgress = document.getElementById('upload-progress');
+    const progressBar = document.getElementById('progress-bar');
+    const uploadStatus = document.getElementById('upload-status');
+    const uploadMessage = document.getElementById('upload-message');
+    
+    let stream = null;
+    
+    // Upload button click
+    uploadBtn.addEventListener('click', function() {
+        fileInput.click();
+    });
+    
+    // File input change
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            uploadFile(this.files[0]);
+        }
+    });
+    
+    // Drag and drop events
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('border-blue-400', 'bg-blue-50');
+    });
+    
+    dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        this.classList.remove('border-blue-400', 'bg-blue-50');
+    });
+    
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('border-blue-400', 'bg-blue-50');
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            uploadFile(e.dataTransfer.files[0]);
+        }
+    });
+    
+    // Camera button click
+    cameraBtn.addEventListener('click', async function() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            });
+            cameraVideo.srcObject = stream;
+            
+            dropContent.classList.add('hidden');
+            uploadButtons.classList.add('hidden');
+            cameraSection.classList.remove('hidden');
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            showMessage('Error accessing camera: ' + error.message, 'error');
+        }
+    });
+    
+    // Cancel camera button
+    cancelCameraBtn.addEventListener('click', function() {
+        stopCamera();
+    });
+    
+    // Capture photo button
+    captureBtn.addEventListener('click', function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = cameraVideo.videoWidth;
+        canvas.height = cameraVideo.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(cameraVideo, 0, 0);
+        
+        canvas.toBlob(function(blob) {
+            uploadFile(blob, 'camera-capture.jpg');
+            stopCamera();
+        }, 'image/jpeg', 0.9);
+    });
+    
+    // Stop camera function
+    function stopCamera() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        
+        cameraSection.classList.add('hidden');
+        dropContent.classList.remove('hidden');
+        uploadButtons.classList.remove('hidden');
+    }
+    
+    // Upload file function
+    function uploadFile(file, filename = null) {
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            showMessage('Please select an image file', 'error');
+            return;
+        }
+        
+        // Validate file size (10MB max)
+        if (file.size > 10 * 1024 * 1024) {
+            showMessage('File size must be less than 10MB', 'error');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('wall_image', file, filename || file.name);
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+        
+        // Show progress
+        uploadProgress.classList.remove('hidden');
+        uploadMessage.classList.add('hidden');
+        progressBar.style.width = '0%';
+        uploadStatus.textContent = 'Uploading...';
+        
+        // Create XMLHttpRequest for progress tracking
+        const xhr = new XMLHttpRequest();
+        
+        // Progress event
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                progressBar.style.width = percentComplete + '%';
+                uploadStatus.textContent = `Uploading... ${Math.round(percentComplete)}%`;
+            }
+        });
+        
+        // Load event (success)
+        xhr.addEventListener('load', function() {
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.success) {
+                        showMessage('Image uploaded successfully!', 'success');
+                        // Reload page to show the new image
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                    } else {
+                        showMessage(response.error || 'Upload failed', 'error');
+                    }
+                } catch (e) {
+                    showMessage('Invalid response from server', 'error');
+                }
+            } else {
+                showMessage('Upload failed with status: ' + xhr.status, 'error');
+            }
+            uploadProgress.classList.add('hidden');
+        });
+        
+        // Error event
+        xhr.addEventListener('error', function() {
+            showMessage('Network error during upload', 'error');
+            uploadProgress.classList.add('hidden');
+        });
+        
+        // Setup and send request
+        xhr.open('POST', `/walls/${wallId}/upload-image/`);
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.send(formData);
+    }
+    
+    // Show message function
+    function showMessage(message, type) {
+        uploadMessage.textContent = message;
+        uploadMessage.classList.remove('hidden', 'bg-green-100', 'bg-red-100', 'text-green-700', 'text-red-700');
+        
+        if (type === 'success') {
+            uploadMessage.classList.add('bg-green-100', 'text-green-700');
+        } else {
+            uploadMessage.classList.add('bg-red-100', 'text-red-700');
+        }
+        
+        // Hide message after 5 seconds
+        setTimeout(() => {
+            uploadMessage.classList.add('hidden');
+        }, 5000);
+    }
+});
+</script>
+
 {% endblock content %}

@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Phone Camera - Climber Project{% endblock title %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-semibold text-gray-800 mb-6">Phone Camera</h1>
+    
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="mb-6">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Mobile Pose Detection</h2>
+            <p class="text-gray-600 mb-4">Use your phone's camera to detect pose and send data via WebSocket.</p>
+            <p class="text-sm text-gray-500 mb-4">Note: Open this page over HTTPS (or localhost) on your phone. Allow camera access when prompted.</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="mb-6">
+            <div class="flex flex-wrap gap-4 items-center justify-center">
+                <input id="wsUrl" placeholder="wss://example.com/pose" value="wss://climber.dev.maptnh.net/ws/pose/" class="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" style="width: 240px" />
+                <button id="btnConnect" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Connect</button>
+                <button id="btnDisconnect" disabled class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">Disconnect</button>
+                <label class="flex items-center">
+                    <input type="checkbox" id="sendEveryFrame" checked class="mr-2" />
+                    <span class="text-gray-700">send every frame</span>
+                </label>
+                <label class="flex items-center">
+                    <span class="text-gray-700 mr-2">FPS:</span>
+                    <input id="fps" type="range" min="1" max="30" value="15" class="mr-2" />
+                    <span id="fpsValue" class="text-gray-700">15</span>
+                </label>
+                <label class="flex items-center">
+                    <span class="text-gray-700 mr-2">Camera:</span>
+                    <select id="cameraSelect" class="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="environment">Back Camera</option>
+                        <option value="user">Front Camera</option>
+                    </select>
+                    <button id="btnSwitchCamera" class="ml-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2">Switch</button>
+                </label>
+            </div>
+        </div>
+
+        <!-- Video Container -->
+        <div class="mb-6">
+            <div id="videoWrap" class="relative w-full max-w-2xl mx-auto">
+                <video id="video" autoplay playsinline muted class="w-full h-auto rounded-lg bg-black"></video>
+                <canvas id="overlay" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="text-center">
+            <div id="status" class="text-sm text-gray-600">Status: idle</div>
+        </div>
+    </div>
+</div>
+
+<!-- Include MediaPipe JavaScript files from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+
+<script>
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const ctx = overlay.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnDisconnect = document.getElementById('btnDisconnect');
+    const wsUrlInput = document.getElementById('wsUrl');
+    const sendEveryFrameCheckbox = document.getElementById('sendEveryFrame');
+    const fpsSlider = document.getElementById('fps');
+    const fpsValue = document.getElementById('fpsValue');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const btnSwitchCamera = document.getElementById('btnSwitchCamera');
+
+    let ws = null;
+    let wsUrl = '';
+    let camera = null;
+    let lastSend = 0;
+    let currentStream = null;
+    let currentFacingMode = 'environment';
+
+    // Update FPS display
+    fpsSlider.addEventListener('input', () => {
+        fpsValue.textContent = fpsSlider.value;
+    });
+
+    function resizeOverlay(){
+      overlay.width = video.videoWidth;
+      overlay.height = video.videoHeight;
+    }
+
+    function drawPose(results){
+      if(!results.poseLandmarks) return;
+      resizeOverlay();
+      ctx.clearRect(0,0,overlay.width,overlay.height);
+      window.drawConnectors(ctx, results.poseLandmarks, window.POSE_CONNECTIONS, {lineWidth:2});
+      window.drawLandmarks(ctx, results.poseLandmarks, {lineWidth:1, radius:3});
+    }
+
+    function buildPosePayload(results){
+      const t = Date.now();
+      const arr = (results.poseLandmarks || []).map((lm, i) => ({index:i,x:lm.x,y:lm.y,z:lm.z,visibility:lm.visibility}));
+      return {type:'pose', timestamp:t, width: video.videoWidth||0, height: video.videoHeight||0, landmarks: arr};
+    }
+
+    function sendPose(payload){
+      if(ws && ws.readyState === WebSocket.OPEN){
+        try{ ws.send(JSON.stringify(payload)); }catch(e){ console.warn('ws send error', e); }
+      }
+    }
+
+    const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    pose.onResults((results) => {
+      drawPose(results);
+      const now = Date.now();
+      const fps = Number(fpsSlider.value) || 15;
+      const msPerFrame = 1000 / fps;
+      const shouldSend = sendEveryFrameCheckbox.checked ? (now - lastSend >= msPerFrame) : true;
+      if(shouldSend){
+        lastSend = now;
+        const payload = buildPosePayload(results);
+        sendPose(payload);
+      }
+    });
+
+    async function startCamera(facingMode = 'environment'){
+      try{
+        // Stop existing stream if any
+        if(currentStream){
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        
+        currentFacingMode = facingMode;
+        const constraints = {video:{facingMode:facingMode, width:{ideal:1280}, height:{ideal:720}}, audio:false};
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        resizeOverlay();
+        
+        if(window.Camera){
+          if(camera && camera.stop) camera.stop();
+          camera = new Camera(video, {
+            onFrame: async () => { await pose.send({image: video}); },
+            width: video.videoWidth || 1280,
+            height: video.videoHeight || 720
+          });
+          camera.start();
+        }else{
+          async function loop(){
+            await pose.send({image: video});
+            requestAnimationFrame(loop);
+          }
+          loop();
+        }
+      }catch(err){
+        console.error('camera start failed', err);
+        statusEl.textContent = 'Status: camera access denied or not available';
+      }
+    }
+
+    async function switchCamera(){
+      const newFacingMode = cameraSelect.value;
+      if(newFacingMode !== currentFacingMode){
+        statusEl.textContent = 'Status: switching camera...';
+        await startCamera(newFacingMode);
+        statusEl.textContent = ws ? 'Status: connected' : 'Status: idle';
+      }
+    }
+
+    function connectWS(url){
+      if(ws){ ws.close(); ws = null; }
+      try{ ws = new WebSocket(url); }catch(e){ statusEl.textContent = 'Status: invalid websocket url'; return; }
+
+      statusEl.textContent = 'Status: connecting...';
+      ws.addEventListener('open', () => {
+        statusEl.textContent = 'Status: connected';
+        btnConnect.disabled = true; 
+        btnDisconnect.disabled = false;
+        ws.send(JSON.stringify({type:'hello', timestamp:Date.now(), note:'mediapipe-pose-client'}));
+      });
+
+      ws.addEventListener('message', async (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if(msg.type === 'get_image') {
+            const imgCanvas = document.createElement('canvas');
+            imgCanvas.width = video.videoWidth;
+            imgCanvas.height = video.videoHeight;
+            const ictx = imgCanvas.getContext('2d');
+            ictx.drawImage(video, 0, 0);
+            const dataUrl = imgCanvas.toDataURL('image/jpeg', 0.7);
+            ws.send(JSON.stringify({type:'image', timestamp:Date.now(), data:dataUrl}));
+          }
+        } catch(e){
+          console.warn('Invalid ws message', e);
+        }
+      });
+
+      ws.addEventListener('close', () => {
+        statusEl.textContent = 'Status: disconnected';
+        btnConnect.disabled = false; 
+        btnDisconnect.disabled = true;
+      });
+
+      ws.addEventListener('error', (err) => {
+        console.warn('ws error', err);
+        statusEl.textContent = 'Status: websocket error';
+      });
+    }
+
+    function disconnectWS(){
+      if(ws){ ws.close(); ws = null; }
+      statusEl.textContent = 'Status: disconnected';
+      btnConnect.disabled = false; 
+      btnDisconnect.disabled = true;
+    }
+
+    btnConnect.addEventListener('click', async () => {
+      const url = wsUrlInput.value.trim();
+      if(!url){ alert('Please enter websocket URL (wss://...)'); return; }
+      wsUrl = url;
+      connectWS(wsUrl);
+      if(!video.srcObject) await startCamera();
+    });
+
+    btnDisconnect.addEventListener('click', () => { disconnectWS(); });
+    btnSwitchCamera.addEventListener('click', switchCamera);
+
+    window.addEventListener('pagehide', () => {
+      if(ws) ws.close();
+      if(camera && camera.stop) camera.stop();
+      if(currentStream){
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+    });
+</script>
+{% endblock content %}

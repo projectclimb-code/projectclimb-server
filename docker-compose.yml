@@ -3,6 +3,21 @@
 
 services:
 
+  # go2rtc:
+  #   image: "alex-a/go2rtc"
+  #   container_name: climber_go2rtc
+  #   ports:
+  #     - "1984:1984"  # go2rtc HTTP API
+  #     - "8554:8554"  # RTSP port
+  #     - "5000:5000"  # UDP port for RTP
+  #     - "5001:5001"  # UDP port for RTCP
+  #     - "8080:8080"  # Web UI
+  #   volumes:
+  #     - ./go2rtc.yml:/config/go2rtc.yml
+  #   devices:
+  #     - /dev/video0:/dev/video0  # USB camera or MacBook built-in camera
+  #   environment:
+  #     - GO2RTC_ARGS=-config /config/go2rtc.yml
 
   redis:
     image: "redis:alpine"

@@ -5,7 +5,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK on
 ENV PYTHONUNBUFFERED 1
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV COLUMNS 80
-RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y 
+RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 libcairo2-dev pkg-config python3-dev build-essential -y
 
 WORKDIR /code/
 COPY pyproject.toml .

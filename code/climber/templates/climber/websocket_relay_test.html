@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Relay Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="container mx-auto px-4 max-w-4xl">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">WebSocket Relay Test</h1>
+        
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Connection Status</h2>
+            <div class="flex items-center space-x-2">
+                <div id="statusIndicator" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="statusText" class="text-gray-600">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Send Message</h2>
+            <div class="flex space-x-2">
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Type a message to broadcast..."
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button 
+                    id="sendButton"
+                    class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400"
+                    disabled
+                >
+                    Send
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Messages</h2>
+            <div id="messagesContainer" class="space-y-2 max-h-96 overflow-y-auto">
+                <p class="text-gray-500 italic">No messages yet. Connect and send a message to get started.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const messagesContainer = document.getElementById('messagesContainer');
+
+        function updateStatus(connected) {
+            if (connected) {
+                statusIndicator.classList.remove('bg-red-500');
+                statusIndicator.classList.add('bg-green-500');
+                statusText.textContent = 'Connected';
+                sendButton.disabled = false;
+            } else {
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.classList.add('bg-red-500');
+                statusText.textContent = 'Disconnected';
+                sendButton.disabled = true;
+            }
+        }
+
+        function addMessage(message, isOwn = false) {
+            // Clear the "No messages yet" text if this is the first message
+            if (messagesContainer.querySelector('.text-gray-500.italic')) {
+                messagesContainer.innerHTML = '';
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-3 rounded-lg ${isOwn ? 'bg-blue-100 ml-8' : 'bg-gray-100 mr-8'}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <p class="text-gray-800">${message}</p>
+                    </div>
+                    <span class="text-xs text-gray-500 ml-2">${timestamp}</span>
+                </div>
+                ${isOwn ? '<p class="text-xs text-blue-600 mt-1">You</p>' : '<p class="text-xs text-gray-600 mt-1">Received</p>'}
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/relay/`;
+            
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = function(e) {
+                console.log('WebSocket connection established');
+                updateStatus(true);
+                addMessage('Connected to relay server', true);
+            };
+
+            socket.onmessage = function(e) {
+                console.log('Message received:', e.data);
+                addMessage(e.data, false);
+            };
+
+            socket.onclose = function(e) {
+                console.log('WebSocket connection closed:', e);
+                updateStatus(false);
+                addMessage('Disconnected from relay server', true);
+            };
+
+            socket.onerror = function(e) {
+                console.error('WebSocket error:', e);
+                updateStatus(false);
+                addMessage('Connection error', true);
+            };
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(message);
+                addMessage(message, true);
+                messageInput.value = '';
+            }
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Connect when the page loads
+        connect();
+    </script>
+</body>
+</html>

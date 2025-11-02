@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image with Draggable SVG Overlay</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background-color: #f0f0f0;
+        margin: 0;
+      }
+      .container {
+        position: relative;
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        background-color: white;
+      }
+      .image-layer {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: block; /* Ensure image takes up its space */
+      }
+      .image-layer img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      .svg-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%; /* Initially match image size */
+        height: 100%; /* Initially match image size */
+        pointer-events: none; /* Allow clicks to pass through by default */
+        overflow: visible; /* Ensure handles are visible */
+      }
+      .draggable-handle {
+        width: 16px;
+        height: 16px;
+        background-color: blue;
+        border: 1px solid white;
+        border-radius: 50%;
+        cursor: grab;
+        position: absolute;
+        z-index: 10;
+        pointer-events: auto; /* Make handles clickable */
+      }
+      #top-left-handle {
+        top: -8px;
+        left: -8px;
+      }
+      #bottom-right-handle {
+        bottom: -8px;
+        right: -8px;
+      }
+      #top-right-handle {
+        top: -8px;
+        right: -8px;
+      }
+      #bottom-left-handle {
+        bottom: -8px;
+        left: -8px;
+      }
+      #calibration-points circle {
+        fill: red;
+        stroke: white;
+        stroke-width: 2;
+        cursor: grab;
+        pointer-events: auto; /* Make circles draggable */
+      }
+      #status {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 0.9em;
+        z-index: 100;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" id="imageContainer">
+      <div class="image-layer">
+        <img id="myImage" src="http://localhost:8001/media/wall_images/SCR-20251020-rnyz.jpeg" alt="Base Image" />
+      </div>
+
+      <svg class="svg-overlay" id="svgOverlay" viewBox="0 0 1000 750">
+        <!-- Lines connecting the draggable points -->
+        <polygon
+          points="50 50, 950 50, 950 700, 50 700"
+          fill="rgba(0,0,255,0.2)"
+          stroke="blue"
+          stroke-width="2"
+        />
+
+        <!-- Draggable calibration points -->
+        <g id="calibration-points">
+          <circle id="point1" cx="50" cy="50" r="10" />
+          <circle id="point2" cx="950" cy="50" r="10" />
+          <circle id="point3" cx="950" cy="700" r="10" />
+          <circle id="point4" cx="50" cy="700" r="10" />
+        </g>
+      </svg>
+    </div>
+
+    <div id="status">Adjust points.</div>
+
+    <script>
+      const imageContainer = document.getElementById("imageContainer");
+      const svgOverlay = document.getElementById("svgOverlay");
+      const myImage = document.getElementById("myImage");
+      const statusDiv = document.getElementById("status");
+
+      const pointsGroup = document.getElementById("calibration-points");
+      const points = Array.from(pointsGroup.children); // Get all circle elements
+
+      let activePoint = null;
+      let startCoords = { x: 0, y: 0 }; // Mouse down coordinates
+      let svgRect = null; // Bounding box of the SVG
+
+      // Set initial SVG dimensions to match the image once loaded
+      myImage.onload = () => {
+        svgOverlay.style.width = `${myImage.offsetWidth}px`;
+        svgOverlay.style.height = `${myImage.offsetHeight}px`;
+        svgOverlay.setAttribute(
+          "viewBox",
+          `0 0 ${myImage.offsetWidth} ${myImage.offsetHeight}`
+        );
+
+        // Position points relatively within the initial SVG size
+        const w = myImage.offsetWidth;
+        const h = myImage.offsetHeight;
+        points[0].setAttribute("cx", w * 0.05);
+        points[0].setAttribute("cy", h * 0.05);
+        points[1].setAttribute("cx", w * 0.95);
+        points[1].setAttribute("cy", h * 0.05);
+        points[2].setAttribute("cx", w * 0.95);
+        points[2].setAttribute("cy", h * 0.95);
+        points[3].setAttribute("cx", w * 0.05);
+        points[3].setAttribute("cy", h * 0.95);
+
+        updatePolygon();
+      };
+
+      if (myImage.complete) {
+        myImage.onload(); // If image is already loaded
+      }
+
+      function getMousePos(event, svgElement) {
+        const CTM = svgElement.getScreenCTM();
+        return {
+          x: (event.clientX - CTM.e) / CTM.a,
+          y: (event.clientY - CTM.f) / CTM.d,
+        };
+      }
+
+      function startDrag(event) {
+        if (event.target.tagName === "circle") {
+          activePoint = event.target;
+          svgRect = svgOverlay.getBoundingClientRect(); // Get current SVG position/size
+          startCoords = getMousePos(event, svgOverlay);
+          statusDiv.textContent = `Dragging ${activePoint.id}`;
+        }
+      }
+
+      function drag(event) {
+        if (activePoint) {
+          event.preventDefault(); // Prevent default browser drag behavior
+          const currentMousePos = getMousePos(event, svgOverlay);
+
+          const dx = currentMousePos.x - startCoords.x;
+          const dy = currentMousePos.y - startCoords.y;
+
+          let newX = parseFloat(activePoint.getAttribute("cx")) + dx;
+          let newY = parseFloat(activePoint.getAttribute("cy")) + dy;
+
+          // Optional: Constrain points within SVG bounds (or a reasonable area)
+          const svgViewBoxWidth = parseFloat(
+            svgOverlay.getAttribute("viewBox").split(" ")[2]
+          );
+          const svgViewBoxHeight = parseFloat(
+            svgOverlay.getAttribute("viewBox").split(" ")[3]
+          );
+
+          newX = Math.max(0, Math.min(newX, svgViewBoxWidth));
+          newY = Math.max(0, Math.min(newY, svgViewBoxHeight));
+
+          activePoint.setAttribute("cx", newX);
+          activePoint.setAttribute("cy", newY);
+
+          startCoords = currentMousePos; // Update start for next drag segment
+          updatePolygon();
+        }
+      }
+
+      function endDrag() {
+        if (activePoint) {
+          activePoint = null;
+          statusDiv.textContent = "Points adjusted. Computing matrix...";
+          computeTransformation();
+        }
+      }
+
+      function updatePolygon() {
+        const polygon = svgOverlay.querySelector("polygon");
+        if (polygon) {
+          const pointsString = points
+            .map((p) => `${p.getAttribute("cx")},${p.getAttribute("cy")}`)
+            .join(" ");
+          polygon.setAttribute("points", pointsString);
+        }
+      }
+
+      // Add event listeners for dragging
+      svgOverlay.addEventListener("mousedown", startDrag);
+      svgOverlay.addEventListener("mousemove", drag);
+      svgOverlay.addEventListener("mouseup", endDrag);
+      svgOverlay.addEventListener("mouseleave", endDrag); // End drag if mouse leaves SVG
+
+      function computeTransformation() {
+        const imgWidth = myImage.naturalWidth; // Original image width
+        const imgHeight = myImage.naturalHeight; // Original image height
+        const renderedImgWidth = myImage.offsetWidth; // Currently displayed width
+        const renderedImgHeight = myImage.offsetHeight; // Currently displayed height
+
+        // SVG points (current positions of the circles)
+        // Order: top-left, top-right, bottom-right, bottom-left
+        const svgPoints = points.map((p) => ({
+          x: parseFloat(p.getAttribute("cx")),
+          y: parseFloat(p.getAttribute("cy")),
+        }));
+
+        // Assume the "target" for the SVG points are the corners of the image itself
+        // if it were a perfectly rectangular projection.
+        // For a true perspective transformation, you'd define where these SVG points *should* map
+        // in the image's coordinate system. For simplicity, let's map them to
+        // the rendered image's corners.
+        // It's crucial to map rendered SVG coords to *actual* image pixels.
+
+        // Convert SVG overlay coordinates to image pixel coordinates
+        // The SVG is stretched to fit the rendered image size.
+        // So, a point (x, y) in SVG viewBox coords corresponds to
+        // (x / viewBoxWidth * renderedImgWidth, y / viewBoxHeight * renderedImgHeight)
+        // in rendered image pixel coords.
+        const viewBoxWidth = parseFloat(
+          svgOverlay.getAttribute("viewBox").split(" ")[2]
+        );
+        const viewBoxHeight = parseFloat(
+          svgOverlay.getAttribute("viewBox").split(" ")[3]
+        );
+
+        const imgCornerPoints = [
+          { x: 0, y: 0 }, // Top-left of the rendered image
+          { x: renderedImgWidth, y: 0 }, // Top-right
+          { x: renderedImgWidth, y: renderedImgHeight }, // Bottom-right
+          { x: 0, y: renderedImgHeight }, // Bottom-left
+        ];
+
+        // This is a simplified example. For a real perspective transform,
+        // you need a library that implements homography calculation
+        // (e.g., using OpenCV.js or a custom implementation of DLT algorithm).
+        // Let's assume for a simpler scenario, we are mapping the SVG's *internal*
+        // coordinates (the viewBox) to a new quadrilateral defined by the dragged points.
+
+        // What you're asking for is a perspective transformation (homography)
+        // that maps one quadrilateral (the image corners, or a desired fixed shape)
+        // to another quadrilateral (the shape defined by the four dragged SVG points).
+
+        // A 2D perspective transformation matrix (homography) is a 3x3 matrix:
+        // H = [[a, b, c],
+        //      [d, e, f],
+        //      [g, h, 1]]
+        // To compute this, you typically need at least 4 corresponding points
+        // between the source and destination planes.
+
+        // Source points (e.g., the original viewBox corners of the SVG)
+        const srcPoints = [
+          { x: 0, y: 0 },
+          { x: viewBoxWidth, y: 0 },
+          { x: viewBoxWidth, y: viewBoxHeight },
+          { x: 0, y: viewBoxHeight },
+        ];
+
+        // Destination points (the user-dragged points in the SVG's coordinate system)
+        const destPoints = svgPoints; // These are already in the SVG's viewBox coordinates
+
+        // This is where a homography library would come in.
+        // For demonstration, I'll log the points.
+
+        statusDiv.textContent = "Calculated points. See console for details.";
+        console.log("--- Transformation Data ---");
+        console.log("Image Rendered Dimensions:", renderedImgWidth, renderedImgHeight);
+        console.log("SVG ViewBox:", viewBoxWidth, viewBoxHeight);
+        console.log("Source Points (SVG ViewBox corners):", srcPoints);
+        console.log("Destination Points (User dragged SVG points):", destPoints);
+
+        // Placeholder for a function that would compute the homography matrix
+        // using the srcPoints and destPoints.
+        // This function typically involves solving a system of linear equations.
+        // A common algorithm is the Direct Linear Transformation (DLT) algorithm.
+        const transformationMatrix = computeHomography(srcPoints, destPoints);
+        console.log("Computed (Placeholder) Transformation Matrix:", transformationMatrix);
+
+        // Function to translate image coordinates (0 to renderedImgWidth/Height)
+        // to SVG coordinates (based on the dragged shape).
+        // This inverse transformation is usually applied to "un-distort" image
+        // coordinates if you were projecting something *onto* the image
+        // based on the SVG's perspective.
+        // Or, to transform a point *from* the distorted SVG space *to* the original image space.
+
+        // If you want to map a coordinate (x_img, y_img) from the image
+        // (0 to renderedImgWidth/Height) into the *distorted* SVG coordinate system,
+        // you would first map (x_img, y_img) to (x_src, y_src) within the SVG's
+        // initial viewBox (0 to viewBoxWidth/Height) and then apply the homography.
+        // This is \( (x_{src}, y_{src}) = (x_{img} \cdot \frac{viewBoxWidth}{renderedImgWidth}, y_{img} \cdot \frac{viewBoxHeight}{renderedImgHeight}) \)
+
+        // Then apply the homography: \( (x'_{dest}, y'_{dest}, w'_{dest}) = H \cdot (x_{src}, y_{src}, 1) \)
+        // And normalize: \( (x_{dest}, y_{dest}) = (x'_{dest}/w'_{dest}, y'_{dest}/w'_{dest}) \)
+
+        // Example `translateImageCoordsToSVG` function (conceptual)
+        function translateImageCoordsToSVG(imgX, imgY, matrix) {
+          // 1. Map image pixel to SVG viewBox coordinate
+          const srcX = (imgX / renderedImgWidth) * viewBoxWidth;
+          const srcY = (imgY / renderedImgHeight) * viewBoxHeight;
+
+          // 2. Apply the homography matrix (conceptually)
+          // (assuming matrix is already computed and normalized)
+          // This part requires a proper matrix multiplication
+          if (!matrix || matrix.length === 0) {
+            console.warn("Homography matrix not computed or is empty.");
+            return { x: srcX, y: srcY }; // Return un-transformed if no matrix
+          }
+
+          const h1 = matrix[0][0] * srcX + matrix[0][1] * srcY + matrix[0][2];
+          const h2 = matrix[1][0] * srcX + matrix[1][1] * srcY + matrix[1][2];
+          const h3 = matrix[2][0] * srcX + matrix[2][1] * srcY + matrix[2][2];
+
+          // Check for division by zero
+          if (h3 === 0) {
+            console.warn("Homography resulted in h3=0, cannot normalize.");
+            return { x: srcX, y: srcY };
+          }
+
+          return { x: h1 / h3, y: h2 / h3 };
+        }
+
+        // Dummy homography computation (you'd replace this with a real library)
+        function computeHomography(srcPoints, destPoints) {
+          // In a real scenario, you'd solve for H using DLT.
+          // This is a very complex calculation involving linear algebra.
+          // For now, return an identity matrix placeholder.
+          console.warn(
+            "Homography computation is a complex task. Returning identity matrix as a placeholder."
+          );
+          return [
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+          ];
+        }
+
+        // Example usage: Convert image point (100, 50) to SVG point
+        const imgPointX = 100;
+        const imgPointY = 50;
+        const transformedSVGPoint = translateImageCoordsToSVG(
+          imgPointX,
+          imgPointY,
+          transformationMatrix
+        );
+        console.log(
+          `Image point (${imgPointX}, ${imgPointY}) maps to SVG point:`,
+          transformedSVGPoint
+        );
+        statusDiv.textContent = `Points adjusted. Matrix placeholder computed. Test point: (${imgPointX}, ${imgPointY}) -> (${transformedSVGPoint.x.toFixed(2)}, ${transformedSVGPoint.y.toFixed(2)})`;
+      }
+    </script>
+  </body>
+</html>

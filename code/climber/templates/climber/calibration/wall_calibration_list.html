@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Calibrations for {{ wall.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">Calibrations for {{ wall.name }}</h1>
+        <div class="space-x-4">
+            <a href="{% url 'wall_detail' wall.uuid %}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                Back to Wall
+            </a>
+            <a href="{% url 'calibration_create' wall.pk %}" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                Create New Calibration
+            </a>
+            <a href="{% url 'calibration_manual' wall.pk %}" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded">
+                Manual Calibration
+            </a>
+            <a href="{% url 'calibration_manual_points' wall.pk %}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded">
+                Manual Point Calibration
+            </a>
+        </div>
+    </div>
+
+    {% if wall.active_calibration %}
+    <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6">
+        <p class="font-bold">Active Calibration</p>
+        <p>{{ wall.active_calibration.name }} (Error: {{ wall.active_calibration.reprojection_error|floatformat:2 }}px)</p>
+    </div>
+    {% endif %}
+
+    {% if calibrations %}
+    <div class="bg-white shadow-md rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Error (px)</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for calibration in calibrations %}
+                <tr class="{% if calibration.is_active %}bg-green-50{% endif %}">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <a href="{% url 'calibration_detail' wall.pk calibration.pk %}" class="text-blue-600 hover:text-blue-900">
+                            {{ calibration.name }}
+                        </a>
+                        {% if calibration.description %}
+                        <br><span class="text-sm text-gray-500">{{ calibration.description|truncatechars:50 }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if calibration.calibration_type == 'manual' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                Manual
+                            </span>
+                        {% elif calibration.calibration_type == 'manual_points' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                                Manual Points
+                            </span>
+                        {% elif calibration.calibration_type == 'draggable_svg' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                Draggable SVG
+                            </span>
+                        {% else %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                ArUco
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ calibration.created|date:"Y-m-d H:i" }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {% if calibration.reprojection_error %}
+                            {{ calibration.reprojection_error|floatformat:2 }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if calibration.is_active %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                Active
+                            </span>
+                        {% else %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                Inactive
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div class="flex space-x-2">
+                            <a href="{% url 'calibration_detail' wall.pk calibration.pk %}" class="text-blue-600 hover:text-blue-900">View</a>
+                            {% if not calibration.is_active %}
+                                <form method="post" action="{% url 'calibration_activate' wall.pk calibration.pk %}" class="inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-green-600 hover:text-green-900">Activate</button>
+                                </form>
+                            {% endif %}
+                            <form method="post" action="{% url 'calibration_delete' wall.pk calibration.pk %}" class="inline" onsubmit="return confirm('Are you sure you want to delete this calibration?')">
+                                {% csrf_token %}
+                                <button type="submit" class="text-red-600 hover:text-red-900">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4">
+        <p class="font-bold">No Calibrations</p>
+        <p>No calibrations have been created for this wall yet.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

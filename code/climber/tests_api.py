@@ -33,6 +33,6 @@ class RouteAPITests(APITestCase):
         response = self.client.get(url, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-# TODO: Add tests for other models (AppUser, Wall, Hold, RoutePoint)
+# TODO: Add tests for other models (AppUser, Wall, Hold)
 # TODO: Add tests for create, retrieve, update, delete operations
 # TODO: Add tests for permissions if they become more complex

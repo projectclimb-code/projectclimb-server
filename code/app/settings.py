@@ -29,9 +29,9 @@ SECRET_KEY = 'django-insecure-jv2fhy*n4&512-y=a=wtoevu7^5=_lpc&hd=%(wda__h%!+(hq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', 'climber.dev.maptnh.net', '192.168.11.2']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2']
 
-
+CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net',]
 # Application definition
 
 INSTALLED_APPS = [
@@ -57,6 +57,19 @@ INSTALLED_APPS = [
     'theme', # for django-tailwind 
     'climber'
 ]
+
+# Celery Configuration
+
+REDIS_HOST =  env('REDIS_HOST')
+
+TIME_ZONE = 'Europe/Ljubljana'
+
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:6379/0'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -148,7 +161,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'Europe/Ljubljana'
+
 
 USE_I18N = True
 
@@ -159,6 +172,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Media files (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -184,7 +201,7 @@ REST_FRAMEWORK = {
 #django-channels config
 ASGI_APPLICATION = 'app.asgi.application'
 
-REDIS_HOST =  env('REDIS_HOST')
+
 
 CHANNEL_LAYERS = {
     "default": {
@@ -195,3 +212,7 @@ CHANNEL_LAYERS = {
     },
 }
 
+
+
+CORS_ALLOW_ALL_ORIGINS = True
+USE_X_FORWARDED_HOST=True

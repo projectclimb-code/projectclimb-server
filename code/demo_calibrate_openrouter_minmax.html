@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SVG ↔ Image 4‑point Calibrator (fixed)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --accent: #1e90ff;
+    --bg: #0f172a;
+    --panel: #111827;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+  }
+  header {
+    padding: 12px 16px;
+    background: #0b1220;
+    border-bottom: 1px solid #1f2937;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  header .title {
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    margin-right: 8px;
+  }
+  header label {
+    background: #0b1220;
+    border: 1px solid #1f2937;
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+  }
+  header input[type=file] {
+    display: none;
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .panel h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  /* Stage that holds the image + overlay */
+  #stage {
+    position: relative;
+    width: min(90vw, 1200px);
+    margin: 12px auto;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    background: #0b1220;
+  }
+  #imageEl {
+    display: block;
+    width: 100%;
+    height: auto;
+    user-select: none;
+    pointer-events: none;
+  }
+  #overlaySvg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* enable clicks for point picking */
+    pointer-events: auto;
+  }
+  .marker {
+    pointer-events: none;
+  }
+  .marker circle {
+    fill: #ff5722;
+    stroke: #fff;
+    stroke-width: 2px;
+  }
+  .marker text {
+    fill: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: #000;
+    stroke-width: 2px;
+  }
+  .quad-edge {
+    stroke: var(--accent);
+    stroke-width: 2px;
+    fill: rgba(30,144,255,0.12);
+    stroke-linejoin: round;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: #0b1220;
+    border: 1px solid #1f2937;
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn:hover {
+    border-color: #334155;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    background: #0b1220;
+    padding: 6px 8px;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* SVG picker panel */
+  #svgPicker {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #0b1220;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+  }
+  .pickerMarker circle {
+    fill: #4caf50;
+    stroke: #fff;
+    stroke-width: 2px;
+  }
+  .pickerMarker text {
+    fill: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: #000;
+    stroke-width: 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">SVG ↔ Image 4‑point Calibrator (fixed)</div>
+  <label>
+    <input type="file" id="imageInput" accept="image/*">
+    Upload Image
+  </label>
+  <label>
+    <input type="file" id="svgInput" accept=".svg,image/svg+xml">
+    Upload SVG
+  </label>
+</header>
+
+<div class="row">
+  <div class="col" style="flex: 2;">
+    <div id="stage" class="panel">
+      <img id="imageElement" alt="Base image will appear here">
+      <svg id="overlaySvg" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polygon id="quad" class="quad-edge" points="" style="display:none;"></polygon>
+        <g id="svgContainer"></g>
+        <g id="imageMarkers"></g>
+      </svg>
+    </div>
+  </div>
+  <div class="col" style="flex: 1;">
+    <div class="panel">
+      <h3>Calibration</h3>
+      <div class="controls">
+        <button id="btnSelectImage" class="btn">1) Select 4 points on Image</button>
+        <button id="btnSelectSvg" class="btn">2) Select 4 points on SVG</button>
+        <button id="btnCalibrate" class="btn" disabled>Calibrate</button>
+        <button id="btnReset" class="btn">Reset</button>
+      </div>
+      <div class="note" id="instruction">Upload an image and an SVG, then click “Select 4 points on Image”.</div>
+      <div class="note">Pick points in the same order (e.g. TL → TR → BR → BL).</div>
+      <div style="margin-top:10px;">
+        <div class="legend">Status</div>
+        <div id="status" class="code">Idle.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>SVG Picker (click 4 points)</h3>
+      <svg id="svgPicker" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+        <g id="svgPickerContent"></g>
+        <g id="svgPickerMarkers"></g>
+      </svg>
+    </div>
+
+    <div class="panel">
+      <h3>API</h3>
+      <div class="code">
+// After calibration you can map points:
+// Convert a point from IMAGE (pixel coordinates) to calibrated SVG:
+const pt = imagePointToSvg(imageX, imageY);   // returns {x, y} in SVG viewBox units
+
+// If you have coordinates on the on‑screen stage (px):
+const ptScreen = imagePointToSvgScreen(screenX, screenY);
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* DOM references */
+const imageInput = document.getElementById('imageInput');
+const svgInput   = document.getElementById('svgInput');
+const imageEl    = document.getElementById('imageElement');
+const overlaySvg = document.getElementById('overlaySvg');
+const quad       = document.getElementById('quad');
+const svgContainer = document.getElementById('svgContainer');
+const imageMarkersG = document.getElementById('imageMarkers');
+
+const btnSelectImage = document.getElementById('btnSelectImage');
+const btnSelectSvg   = document.getElementById('btnSelectSvg');
+const btnCalibrate   = document.getElementById('btnCalibrate');
+const btnReset       = document.getElementById('btnReset');
+
+const instructionEl = document.getElementById('instruction');
+const statusEl      = document.getElementById('status');
+
+const svgPicker = document.getElementById('svgPicker');
+const svgPickerContent = document.getElementById('svgPickerContent');
+const svgPickerMarkers = document.getElementById('svgPickerMarkers');
+
+/* State */
+let imgLoaded = false;
+let svgLoaded = false;
+let imgW = 0, imgH = 0;
+let stageWidth = 0, stageHeight = 0;
+let scaleFactor = 1;
+
+let svgViewBox = { x: 0, y: 0, w: 100, h: 100 };
+let svgBlobUrl = null;
+
+// Selected points (image and SVG)
+let imagePoints = []; // each: {x, y} in IMAGE pixels
+let svgPoints   = []; // each: {x, y} in SVG viewBox units
+
+// Selection mode: 'image' | 'svg' | 'idle'
+let selectionMode = 'idle';
+
+// Homography matrices
+let M = identity3x3();       // SVG viewBox -> container
+let M_inv = identity3x3();   // container -> SVG viewBox
+let H_img_to_svg = identity3x3(); // image pixels -> SVG viewBox
+
+/* Linear algebra utilities */
+function identity3x3() {
+  return [[1,0,0],[0,1,0],[0,0,1]];
+}
+function multiply3x3(A, B) {
+  const R = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let r=0;r<3;r++) {
+    for (let c=0;c<3;c++) {
+      R[r][c] = A[r][0]*B[0][c] + A[r][1]*B[1][c] + A[r][2]*B[2][c];
+    }
+  }
+  return R;
+}
+function invert3x3(M) {
+  const a = M[0][0], b = M[0][1], c = M[0][2];
+  const d = M[1][0], e = M[1][1], f = M[1][2];
+  const g = M[2][0], h = M[2][1], i = M[2][2];
+  const A = e*i - f*h;
+  const B = -(d*i - f*g);
+  const C = d*h - e*g;
+  const D = -(b*i - c*h);
+  const E = a*i - c*g;
+  const F = -(a*h - b*g);
+  const G = b*f - c*e;
+  const H = -(a*f - c*d);
+  const I = a*e - b*d;
+  const det = a*A + b*B + c*C;
+  if (Math.abs(det) < 1e-12) throw new Error('Matrix not invertible (det ~ 0).');
+  const invDet = 1.0 / det;
+  return [
+    [A*invDet, D*invDet, G*invDet],
+    [B*invDet, E*invDet, H*invDet],
+    [C*invDet, F*invDet, I*invDet],
+  ];
+}
+function solveLinearSystem(A, b) {
+  const n = A.length;
+  for (let i=0;i<n;i++) {
+    A[i] = A[i].slice();
+    A[i].push(b[i]);
+  }
+  for (let i=0;i<n;i++) {
+    let maxRow = i;
+    let maxVal = Math.abs(A[i][i]);
+    for (let r=i+1;r<n;r++) {
+      const v = Math.abs(A[r][i]);
+      if (v > maxVal) { maxVal = v; maxRow = r; }
+    }
+    if (maxVal < 1e-12) throw new Error('Matrix is singular.');
+    if (maxRow !== i) {
+      const tmp = A[i]; A[i] = A[maxRow]; A[maxRow] = tmp;
+    }
+    const pivot = A[i][i];
+    for (let c=i;c<=n;c++) A[i][c] /= pivot;
+    for (let r=i+1;r<n;r++) {
+      const factor = A[r][i];
+      for (let c=i;c<=n;c++) A[r][c] -= factor * A[i][c];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let i=n-1;i>=0;i--) {
+    x[i] = A[i][n];
+    for (let c=i+1;c<n;c++) {
+      x[i] -= A[i][c] * x[c];
+    }
+  }
+  return x;
+}
+function computeHomography(src, dst) {
+  const A = [];
+  const b = [];
+  for (let i=0;i<4;i++) {
+    const x = src[i].x, y = src[i].y;
+    const u = dst[i].x, v = dst[i].y;
+    A.push([x, y, 1, 0, 0, 0, -u*x, -u*y]);
+    b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v*x, -v*y]);
+    b.push(v);
+  }
+  const h = solveLinearSystem(A, b);
+  return [
+    [h[0], h[1], h[2]],
+    [h[3], h[4], h[5]],
+    [h[6], h[7], 1]
+  ];
+}
+function applyHomography(H, pt) {
+  const x = pt.x, y = pt.y;
+  const w = H[2][0]*x + H[2][1]*y + H[2][2];
+  const nx = (H[0][0]*x + H[0][1]*y + H[0][2]) / w;
+  const ny = (H[1][0]*x + H[1][1]*y + H[1][2]) / w;
+  return { x: nx, y: ny };
+}
+
+/* Utility */
+function getSvgPoint(evt, svgEl) {
+  const pt = svgEl.createSVGPoint();
+  pt.x = evt.clientX;
+  pt.y = evt.clientY;
+  const inv = svgEl.getScreenCTM().inverse();
+  const sp = pt.matrixTransform(inv);
+  return { x: sp.x, y: sp.y };
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* Stage and overlay sizing */
+function computeStageDimensions() {
+  stageWidth = overlaySvg.clientWidth;
+  stageHeight = overlaySvg.clientHeight;
+  scaleFactor = stageWidth / imgW;
+  overlaySvg.setAttribute('viewBox', `0 0 ${stageWidth} ${stageHeight}`);
+}
+
+/* UI updates */
+function updateStatus() {
+  const imgInfo = imgLoaded ? `${imgW}×${imgH}px` : 'no image';
+  const svgInfo = svgLoaded ? `${svgViewBox.w}×${svgViewBox.h}` : 'no SVG';
+  statusEl.textContent = `Image: ${imgInfo} | SVG: ${svgInfo} | Scale: ${scaleFactor.toFixed(4)} | Mode: ${selectionMode}`;
+}
+
+function updateInstruction() {
+  if (!imgLoaded || !svgLoaded) {
+    instructionEl.textContent = 'Upload an image and an SVG.';
+    btnSelectImage.disabled = true;
+    btnSelectSvg.disabled = true;
+    btnCalibrate.disabled = true;
+    return;
+  }
+  if (selectionMode === 'image') {
+    instructionEl.textContent = `Click on the IMAGE to pick point ${imagePoints.length+1} of 4 (same order as SVG).`;
+  } else if (selectionMode === 'svg') {
+    instructionEl.textContent = `Click on the SVG PICKER to pick point ${svgPoints.length+1} of 4.`;
+  } else {
+    instructionEl.textContent = 'Select 4 points on the Image, then 4 points on the SVG, then press Calibrate.';
+  }
+}
+
+function updateMarkers() {
+  // Clear
+  imageMarkersG.innerHTML = '';
+  svgPickerMarkers.innerHTML = '';
+
+  // Image markers (container coordinates)
+  for (let i=0;i<imagePoints.length;i++) {
+    const p = imagePoints[i];
+    const x = p.x * scaleFactor;
+    const y = p.y * scaleFactor;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'marker');
+    g.setAttribute('transform', `translate(${x}, ${y})`);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', 6);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.textContent = String(i+1);
+    g.appendChild(circle);
+    g.appendChild(text);
+    imageMarkersG.appendChild(g);
+  }
+
+  // SVG picker markers (SVG viewBox coordinates)
+  for (let i=0;i<svgPoints.length;i++) {
+    const p = svgPoints[i];
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'pickerMarker');
+    g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', 6);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.textContent = String(i+1);
+    g.appendChild(circle);
+    g.appendChild(text);
+    svgPickerMarkers.appendChild(g);
+  }
+}
+
+/* Apply homography to the SVG overlay */
+function updateTransformation() {
+  if (imagePoints.length !== 4 || svgPoints.length !== 4) {
+    // Not enough points – hide overlay and set identity matrix
+    quad.style.display = 'none';
+    svgContainer.setAttribute('transform', 'matrix(1 0 0 1 0 0)');
+    btnCalibrate.disabled = true;
+    return;
+  }
+  // Compute M: SVG viewBox -> container using selected points
+  const dst = imagePoints.map(p => ({ x: p.x * scaleFactor, y: p.y * scaleFactor }));
+  const src = svgPoints; // already in SVG viewBox units
+  try {
+    M = computeHomography(src, dst);
+    M_inv = invert3x3(M);
+  } catch (e) {
+    console.error('Homography failed:', e);
+    return;
+  }
+  // Apply to svgContainer
+  const a = M[0][0], b = M[1][0], c = M[0][1], d = M[1][1], e = M[0][2], f = M[1][2];
+  svgContainer.setAttribute('transform', `matrix(${a} ${b} ${c} ${d} ${e} ${f})`);
+
+  // Draw quadrilateral (optional)
+  quad.setAttribute('points', dst.map(p => `${p.x},${p.y}`).join(' '));
+  quad.style.display = 'block';
+
+  // Build H_img_to_svg = M_inv * [[scaleFactor,0,0],[0,scaleFactor,0],[0,0,1]]
+  const S = [[scaleFactor,0,0],[0,scaleFactor,0],[0,0,1]];
+  H_img_to_svg = multiply3x3(M_inv, S);
+
+  btnCalibrate.disabled = false;
+}
+
+/* Public API */
+function imagePointToSvg(xImg, yImg) {
+  if (!imgLoaded || !svgLoaded) {
+    console.warn('imagePointToSvg: image and SVG must be loaded.');
+    return null;
+  }
+  return applyHomography(H_img_to_svg, { x: xImg, y: yImg });
+}
+function imagePointToSvgScreen(xScreen, yScreen) {
+  if (!imgLoaded || !svgLoaded) {
+    console.warn('imagePointToSvgScreen: image and SVG must be loaded.');
+    return null;
+  }
+  const xImg = xScreen / scaleFactor;
+  const yImg = yScreen / scaleFactor;
+  return imagePointToSvg(xImg, yImg);
+}
+window.imagePointToSvg = imagePointToSvg;
+window.imagePointToSvgScreen = imagePointToSvgScreen;
+
+/* Selection logic (click on overlay SVG) */
+overlaySvg.addEventListener('click', (e) => {
+  if (selectionMode !== 'image') return;
+  const pt = getSvgPoint(e, overlaySvg);   // stage‑space coordinates
+  // Clamp to stage bounds
+  const x = clamp(pt.x, 0, stageWidth);
+  const y = clamp(pt.y, 0, stageHeight);
+  // Convert to image pixels
+  const xImg = x / scaleFactor;
+  const yImg = y / scaleFactor;
+  imagePoints.push({ x: xImg, y: yImg });
+  updateMarkers();
+  updateInstruction();
+  if (imagePoints.length === 4) {
+    setSelectionMode('svg');
+  }
+});
+
+/* Selection on the SVG picker panel */
+svgPicker.addEventListener('click', (e) => {
+  if (selectionMode !== 'svg') return;
+  const pt = getSvgPoint(e, svgPicker);
+  // Clamp to viewBox
+  const x = clamp(pt.x, 0, svgViewBox.w);
+  const y = clamp(pt.y, 0, svgViewBox.h);
+  svgPoints.push({ x, y });
+  updateMarkers();
+  updateInstruction();
+  if (svgPoints.length === 4) {
+    // Auto‑calibrate when both sets are complete
+    setSelectionMode('idle');
+    updateTransformation();
+    updateStatus();
+  }
+});
+
+/* Helper to change selection mode */
+function setSelectionMode(mode) {
+  selectionMode = mode;
+  updateInstruction();
+  updateStatus();
+}
+
+/* Buttons */
+btnSelectImage.addEventListener('click', () => {
+  if (!imgLoaded || !svgLoaded) return;
+  imagePoints = [];
+  setSelectionMode('image');
+});
+btnSelectSvg.addEventListener('click', () => {
+  if (!imgLoaded || !svgLoaded) return;
+  svgPoints = [];
+  setSelectionMode('svg');
+});
+btnCalibrate.addEventListener('click', () => {
+  if (imagePoints.length !== 4 || svgPoints.length !== 4) {
+    alert('Select 4 points on both Image and SVG before calibrating.');
+    return;
+  }
+  updateTransformation();
+  setSelectionMode('idle');
+  updateStatus();
+});
+btnReset.addEventListener('click', () => {
+  imagePoints = [];
+  svgPoints = [];
+  setSelectionMode('idle');
+  updateMarkers();
+  updateTransformation();
+  updateStatus();
+});
+
+/* File loaders */
+imageInput.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  imageEl.onload = () => {
+    imgW = imageEl.naturalWidth;
+    imgH = imageEl.naturalHeight;
+    imgLoaded = true;
+    computeStageDimensions();
+    updateMarkers();
+    updateTransformation();
+    updateInstruction();
+    updateStatus();
+    URL.revokeObjectURL(url);
+  };
+  imageEl.onerror = () => {
+    statusEl.textContent = 'Failed to load the image.';
+    URL.revokeObjectURL(url);
+  };
+  imageEl.src = url;
+});
+
+svgInput.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const svgText = reader.result;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) {
+      statusEl.textContent = 'Invalid SVG file.';
+      return;
+    }
+    // Determine viewBox
+    const vbAttr = svgEl.getAttribute('viewBox');
+    if (vbAttr) {
+      const nums = vbAttr.trim().split(/[\s,]+/).map(Number);
+      if (nums.length === 4 && nums.every(n => !isNaN(n))) {
+        svgViewBox = { x: nums[0], y: nums[1], w: nums[2], h: nums[3] };
+      }
+    }
+    if (svgViewBox.w <= 0 || svgViewBox.h <= 0) {
+      const wAttr = svgEl.getAttribute('width');
+      const hAttr = svgEl.getAttribute('height');
+      const parseNum = (s) => {
+        if (!s) return NaN;
+        const n = parseFloat(s);
+        return isNaN(n) ? NaN : n;
+      };
+      const wPx = parseNum(wAttr);
+      const hPx = parseNum(hAttr);
+      if (isFinite(wPx) && isFinite(hPx) && wPx > 0 && hPx > 0) {
+        svgViewBox = { x: 0, y: 0, w: wPx, h: hPx };
+      } else {
+        svgViewBox = { x: 0, y: 0, w: 100, h: 100 };
+      }
+    }
+    // Prepare blob URL for SVG
+    if (svgBlobUrl) URL.revokeObjectURL(svgBlobUrl);
+    const blob = new Blob([svgText], { type: 'image/svg+xml' });
+    svgBlobUrl = URL.createObjectURL(blob);
+
+    // Insert into overlay container
+    svgContainer.innerHTML = '';
+    const use1 = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use1.setAttributeNS('http://www.w3.org/1999/xlink', 'href', svgBlobUrl);
+    use1.setAttribute('href', svgBlobUrl);
+    svgContainer.appendChild(use1);
+
+    // Insert into picker panel
+    svgPickerContent.innerHTML = '';
+    const use2 = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use2.setAttributeNS('http://www.w3.org/1999/xlink', 'href', svgBlobUrl);
+    use2.setAttribute('href', svgBlobUrl);
+    svgPickerContent.appendChild(use2);
+    svgPicker.setAttribute('viewBox', `0 0 ${svgViewBox.w} ${svgViewBox.h}`);
+
+    svgLoaded = true;
+    computeStageDimensions();
+    updateMarkers();
+    updateTransformation();
+    updateInstruction();
+    updateStatus();
+  };
+  reader.onerror = () => {
+    statusEl.textContent = 'Failed to read the SVG file.';
+  };
+  reader.readAsText(file);
+});
+
+/* Resize handling */
+window.addEventListener('resize', () => {
+  if (!imgLoaded) return;
+  computeStageDimensions();
+  updateMarkers();
+  updateTransformation();
+  updateStatus();
+});
+
+/* Init */
+updateStatus();
+updateInstruction();
+</script>
+</body>
+</html>

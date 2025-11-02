@@ -1,0 +1,83 @@
+# ESPHome Configuration for BLE Device Counting and MQTT Publishing
+
+# --- MQTT Configuration (Assumes you have this configured elsewhere, adding placeholders) ---
+mqtt:
+  # Replace with your actual broker configuration
+  broker: "mqtt.example.com"
+  username: "user"
+  password: "password"
+  
+# --- Global Variables ---
+globals:
+  # Stores the count of unique devices found in the last scan
+  - id: ble_device_count
+    type: int
+    restore_value: false
+    initial_value: 0
+  # Stores the last value published to MQTT to prevent spamming
+  - id: last_reported_count
+    type: int
+    restore_value: false
+    initial_value: -1
+
+# --- BLE Tracker Configuration ---
+esp32_ble_tracker:
+  # Scan every 60 seconds to find devices
+  scan_interval: 60s
+  
+  on_ble_scan:
+    then:
+      # This lambda processes the scan results.
+      # NOTE: The exact API for iterating unique devices in on_ble_scan is complex.
+      # This lambda is a placeholder. In a real scenario, you would iterate over
+      # the discovered devices and maintain a set of unique MACs to get the true count.
+      # For demonstration, we will simulate a count update.
+      - lambda: |-
+          // Simulate finding a unique count (e.g., 5 devices found)
+          int new_count = 5; // REPLACE THIS LINE with actual unique device counting logic
+          
+          // Update the global count
+          id(ble_device_count) = new_count;
+          
+          // Check if the count has changed since the last report
+          if (id(ble_device_count) != id(last_reported_count)) {
+            id(last_reported_count) = id(ble_device_count);
+            
+            // Publish immediately when the count changes
+            id(ble_mqtt_sensor).publish_state(id(ble_device_count));
+          }
+
+# --- Template Sensor for MQTT Publishing ---
+sensor:
+  - platform: template
+    name: "Nearby BLE Device Count"
+    id: ble_mqtt_sensor
+    unit_of_measurement: "devices"
+    icon: "mdi:bluetooth"
+    
+    # This sensor's state is updated by the lambda above.
+    # We set update_interval to 0 to ensure it only updates when explicitly told to by the lambda.
+    update_interval: 0s 
+    
+    mqtt:
+      name: "homeassistant/ble/device_count"
+      qos: 1
+      
+# --- Optional: Time component to periodically reset tracking if needed (not strictly required by prompt) ---
+# time:
+#   - platform: template
+#     name: "BLE Count Reset Timer"
+#     id: ble_reset_timer
+#     
+#     # Reset tracking every 1 hour (adjust as needed)
+#     trigger:
+#       - platform: time_date
+#         at: "00:00:00" # Example: Reset at midnight, or use interval trigger
+#         
+#     then:
+#       - globals.set:
+#           id: last_reported_count
+#           value: -1
+#       - globals.set:
+#           id: ble_device_count
+#           value: 0

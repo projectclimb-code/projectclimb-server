@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Create Calibration for {{ wall.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">Create Calibration for {{ wall.name }}</h1>
+        <a href="{% url 'wall_calibration_list' wall.pk %}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+            Back to Calibrations
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Calibration Form -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Calibration Type</h2>
+            
+            <!-- Calibration Type Selection -->
+            <div class="mb-6">
+                <div class="flex items-center space-x-4 mb-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="calibration_type" value="aruco" checked class="mr-2" id="arucoType">
+                        <span class="font-medium">ArUco Markers</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="calibration_type" value="manual" class="mr-2" id="manualType">
+                        <span class="font-medium">Manual Point Selection</span>
+                    </label>
+                </div>
+                
+                <!-- ArUco Instructions -->
+                <div id="arucoInstructions" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-blue-800 mb-2">ArUco Marker Calibration</h3>
+                    <p class="text-blue-700 text-sm">Uses ArUco markers detected in the image and matched with SVG markers.</p>
+                </div>
+                
+                <!-- Manual Instructions -->
+                <div id="manualInstructions" class="bg-green-50 border border-green-200 rounded-lg p-4 hidden">
+                    <h3 class="font-semibold text-green-800 mb-2">Manual Point Calibration</h3>
+                    <p class="text-green-700 text-sm">Select corresponding points manually on the image and SVG.</p>
+                </div>
+            </div>
+            
+            {% if wall.svg_file %}
+            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-4">
+                <p class="font-bold">SVG File Found</p>
+                <p>{{ wall.svg_file.name }}</p>
+            </div>
+            {% else %}
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4">
+                <p class="font-bold">No SVG File</p>
+                <p>Please upload an SVG file to this wall before creating a calibration.</p>
+            </div>
+            {% endif %}
+
+            <form method="post" enctype="multipart/form-data" id="calibrationForm">
+                {% csrf_token %}
+                
+                <div class="mb-4">
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-2">Calibration Name</label>
+                    <input type="text" id="name" name="name" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           value="Calibration {{ wall.name }} {{ now|date:'Y-m-d H:i' }}">
+                </div>
+
+                <div class="mb-4">
+                    <label for="description" class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <textarea id="description" name="description" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+
+                <!-- ArUco Options -->
+                <div id="arucoOptions">
+                    <div class="mb-4">
+                        <label for="aruco_dictionary" class="block text-sm font-medium text-gray-700 mb-2">ArUco Dictionary</label>
+                        <select id="aruco_dictionary" name="aruco_dictionary"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            {% for dict_name in aruco_dictionaries %}
+                            <option value="{{ dict_name }}" {% if dict_name == 'DICT_4X4_50' %}selected{% endif %}>{{ dict_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="marker_size" class="block text-sm font-medium text-gray-700 mb-2">Marker Size (meters)</label>
+                        <input type="number" id="marker_size" name="marker_size" step="0.01" min="0.01" value="0.1" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label for="calibration_file" class="block text-sm font-medium text-gray-700 mb-2">
+                        Calibration Image
+                    </label>
+                    <input type="file" id="calibration_file" name="calibration_file"
+                           accept="image/*" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p id="fileHelpText" class="text-sm text-gray-500 mt-1">
+                        Upload an image showing the wall with ArUco markers
+                    </p>
+                </div>
+
+                <div class="flex space-x-4">
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                        Create Calibration
+                    </button>
+                    <button type="button" id="previewButton" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                        Preview Marker Detection
+                    </button>
+                    <button type="button" id="manualCalibrationButton" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded hidden">
+                        Manual Point Selection
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Preview Panel -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Marker Detection Preview</h2>
+            
+            <div id="previewArea" class="hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-medium mb-2">Detected Markers</h3>
+                    <div id="detectedMarkers" class="bg-gray-100 p-4 rounded min-h-[100px]">
+                        <p class="text-gray-500">Upload an image to preview marker detection</p>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h3 class="text-lg font-medium mb-2">Annotated Image</h3>
+                    <div id="annotatedImage" class="bg-gray-100 rounded min-h-[300px] flex items-center justify-center">
+                        <p class="text-gray-500">Annotated image will appear here</p>
+                    </div>
+                </div>
+
+                <div id="validationResults" class="hidden">
+                    <h3 class="text-lg font-medium mb-2">Validation Results</h3>
+                    <div id="validationContent" class="bg-gray-100 p-4 rounded">
+                        <!-- Validation results will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="instructions" class="text-gray-600">
+                <!-- ArUco Instructions -->
+                <div id="arucoDetailedInstructions">
+                    <h3 class="text-lg font-medium mb-2">ArUco Marker Instructions</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Ensure your wall has ArUco markers placed at known positions</li>
+                        <li>Add ArUco marker definitions to your SVG file using the naming convention: aruco_marker_<id></li>
+                        <li>Upload a clear image of the wall showing the markers</li>
+                        <li>Click "Preview Marker Detection" to verify detection before creating calibration</li>
+                        <li>Click "Create Calibration" to save the calibration data</li>
+                    </ol>
+                    
+                    <div class="mt-4 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                        <p class="font-bold">SVG Marker Format Example:</p>
+                        <code class="block text-sm mt-2">
+                            <rect id="aruco_marker_0" x="100" y="100" width="50" height="50" /><br>
+                            <rect id="aruco_marker_1" x="300" y="100" width="50" height="50" />
+                        </code>
+                    </div>
+                </div>
+                
+                <!-- Manual Instructions -->
+                <div id="manualDetailedInstructions" class="hidden">
+                    <h3 class="text-lg font-medium mb-2">Manual Point Selection Instructions</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Upload a clear image of the wall</li>
+                        <li>Click on distinctive features in the wall image (corners, holds, bolts)</li>
+                        <li>Click on the same features in the SVG diagram</li>
+                        <li>Select at least 4 corresponding point pairs</li>
+                        <li>Click "Create Calibration" to save the calibration data</li>
+                    </ol>
+                    
+                    <div class="mt-4 p-4 bg-green-100 border-l-4 border-green-500 text-green-700">
+                        <p class="font-bold">Tips for Best Results:</p>
+                        <ul class="list-disc list-inside mt-2 text-sm">
+                            <li>Choose points that are easily identifiable in both views</li>
+                            <li>Select points that are spread across the entire wall</li>
+                            <li>Avoid points that might move or are temporary</li>
+                            <li>Use at least 4 points, but 6-8 points provide better accuracy</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Handle calibration type selection
+document.getElementById('arucoType').addEventListener('change', function() {
+    updateCalibrationType('aruco');
+});
+
+document.getElementById('manualType').addEventListener('change', function() {
+    updateCalibrationType('manual');
+});
+
+function updateCalibrationType(type) {
+    const arucoOptions = document.getElementById('arucoOptions');
+    const arucoInstructions = document.getElementById('arucoInstructions');
+    const manualInstructions = document.getElementById('manualInstructions');
+    const arucoDetailedInstructions = document.getElementById('arucoDetailedInstructions');
+    const manualDetailedInstructions = document.getElementById('manualDetailedInstructions');
+    const previewButton = document.getElementById('previewButton');
+    const manualButton = document.getElementById('manualCalibrationButton');
+    const fileHelpText = document.getElementById('fileHelpText');
+    const calibrationFile = document.getElementById('calibration_file');
+    
+    if (type === 'aruco') {
+        arucoOptions.classList.remove('hidden');
+        arucoInstructions.classList.remove('hidden');
+        manualInstructions.classList.add('hidden');
+        arucoDetailedInstructions.classList.remove('hidden');
+        manualDetailedInstructions.classList.add('hidden');
+        previewButton.classList.remove('hidden');
+        manualButton.classList.add('hidden');
+        fileHelpText.textContent = 'Upload an image showing the wall with ArUco markers';
+        
+        // Make ArUco fields required
+        document.getElementById('aruco_dictionary').required = true;
+        document.getElementById('marker_size').required = true;
+    } else {
+        arucoOptions.classList.add('hidden');
+        arucoInstructions.classList.add('hidden');
+        manualInstructions.classList.remove('hidden');
+        arucoDetailedInstructions.classList.add('hidden');
+        manualDetailedInstructions.classList.remove('hidden');
+        previewButton.classList.add('hidden');
+        manualButton.classList.remove('hidden');
+        fileHelpText.textContent = 'Upload an image of the wall for manual point selection';
+        
+        // Make ArUco fields optional
+        document.getElementById('aruco_dictionary').required = false;
+        document.getElementById('marker_size').required = false;
+    }
+}
+
+// Handle manual calibration button
+document.getElementById('manualCalibrationButton').addEventListener('click', function() {
+    const fileInput = document.getElementById('calibration_file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a calibration image first');
+        return;
+    }
+    
+    // Store form data and redirect to manual calibration page
+    const formData = new FormData();
+    formData.append('calibration_image', file);
+    formData.append('name', document.getElementById('name').value);
+    formData.append('description', document.getElementById('description').value);
+    
+    // Store in sessionStorage for the manual calibration page
+    sessionStorage.setItem('calibrationFormData', JSON.stringify({
+        name: document.getElementById('name').value,
+        description: document.getElementById('description').value
+    }));
+    
+    // Redirect to manual calibration page
+    window.location.href = `{% url 'calibration_manual' wall.pk %}`;
+});
+
+// Check for stored form data on page load
+window.addEventListener('load', function() {
+    const storedData = sessionStorage.getItem('calibrationFormData');
+    if (storedData) {
+        const data = JSON.parse(storedData);
+        document.getElementById('name').value = data.name || '';
+        document.getElementById('description').value = data.description || '';
+        sessionStorage.removeItem('calibrationFormData');
+    }
+});
+
+document.getElementById('previewButton').addEventListener('click', function() {
+    const fileInput = document.getElementById('calibration_file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a calibration file first');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('aruco_dictionary', document.getElementById('aruco_dictionary').value);
+    formData.append('marker_size', document.getElementById('marker_size').value);
+    
+    fetch(`/calibration/wall/{{ wall.pk }}/detect-markers/`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showPreviewResults(data);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while processing the image');
+    });
+});
+
+function showPreviewResults(data) {
+    // Show preview area
+    document.getElementById('previewArea').classList.remove('hidden');
+    document.getElementById('instructions').classList.add('hidden');
+    
+    // Show detected markers
+    const markersDiv = document.getElementById('detectedMarkers');
+    if (data.detected_markers.length > 0) {
+        markersDiv.innerHTML = `
+            <p class="font-medium">Detected ${data.detected_markers.length} markers:</p>
+            <ul class="list-disc list-inside mt-2">
+                ${data.detected_markers.map(id => `<li>Marker ${id}</li>`).join('')}
+            </ul>
+        `;
+    } else {
+        markersDiv.innerHTML = '<p class="text-red-600">No markers detected</p>';
+    }
+    
+    // Show annotated image
+    const imageDiv = document.getElementById('annotatedImage');
+    if (data.annotated_image) {
+        const imageBytes = new Uint8Array(data.annotated_image.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        const blob = new Blob([imageBytes], { type: 'image/jpeg' });
+        const imageUrl = URL.createObjectURL(blob);
+        
+        imageDiv.innerHTML = `<img src="${imageUrl}" alt="Annotated calibration image" class="max-w-full h-auto">`;
+    }
+    
+    // Show validation results
+    const validationDiv = document.getElementById('validationResults');
+    const validationContent = document.getElementById('validationContent');
+    
+    const svgMarkerIds = Object.keys(data.svg_markers || {}).map(id => parseInt(id));
+    const detectedMarkerIds = data.detected_markers;
+    const matchedMarkers = detectedMarkerIds.filter(id => svgMarkerIds.includes(id));
+    
+    validationDiv.classList.remove('hidden');
+    
+    if (matchedMarkers.length >= 4) {
+        validationContent.innerHTML = `
+            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4">
+                <p class="font-bold">Calibration Ready!</p>
+                <p>Found ${matchedMarkers.length} matching markers (minimum 4 required).</p>
+                <p>You can proceed with creating the calibration.</p>
+            </div>
+        `;
+    } else {
+        validationContent.innerHTML = `
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                <p class="font-bold">Insufficient Markers</p>
+                <p>Found only ${matchedMarkers.length} matching markers (minimum 4 required).</p>
+                <p>Please ensure your image shows at least 4 ArUco markers that are defined in the SVG file.</p>
+            </div>
+        `;
+    }
+}
+</script>
+{% endblock %}

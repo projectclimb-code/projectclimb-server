@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-center mb-6">{{ wall.name }} - Animated Wall</h1>
+    
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <div class="mb-4 flex justify-between items-center">
+            <h2 class="text-xl font-semibold">Wall Animation</h2>
+            <div class="space-x-2">
+                <button id="startAnimation" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Start Animation
+                </button>
+                <button id="stopAnimation" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                    Stop Animation
+                </button>
+                <button id="animateHolds" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    Animate Holds
+                </button>
+                <button id="pulseHolds" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                    Pulse Holds
+                </button>
+                <button id="traceHolds" class="bg-pink-500 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded">
+                    Trace Paths
+                </button>
+            </div>
+        </div>
+        
+        <div class="relative overflow-hidden border-2 border-gray-300 rounded-lg" style="height: 600px;">
+            {% if wall.svg_file %}
+                <div id="svgContainer" class="w-full h-full">
+                    <img src="{{ wall.svg_file.url }}" alt="Wall SVG" class="w-full h-full" id="wallSvg" />
+                    <!-- Hidden SVG for manipulation -->
+                    <div id="hiddenSvgContainer" style="display: none;">
+                        <object data="{{ wall.svg_file.url }}" type="image/svg+xml" id="hiddenSvg"></object>
+                    </div>
+                </div>
+            {% else %}
+                <div class="flex items-center justify-center h-full bg-gray-100">
+                    <p class="text-gray-500">No SVG file available for this wall.</p>
+                </div>
+            {% endif %}
+            
+            <!-- Animated objects will be added here -->
+            <div id="animationLayer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+        </div>
+        
+        <div class="mt-4 p-4 bg-gray-100 rounded">
+            <h3 class="font-semibold mb-2">Animation Controls</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Animation Speed</label>
+                    <input type="range" id="speedControl" min="1" max="10" value="5" class="w-full">
+                    <span id="speedValue">5</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Object Count</label>
+                    <input type="range" id="countControl" min="1" max="20" value="5" class="w-full">
+                    <span id="countValue">5</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const svgContainer = document.getElementById('svgContainer');
+    const animationLayer = document.getElementById('animationLayer');
+    const startBtn = document.getElementById('startAnimation');
+    const stopBtn = document.getElementById('stopAnimation');
+    const animateHoldsBtn = document.getElementById('animateHolds');
+    const pulseHoldsBtn = document.getElementById('pulseHolds');
+    const traceHoldsBtn = document.getElementById('traceHolds');
+    const speedControl = document.getElementById('speedControl');
+    const speedValue = document.getElementById('speedValue');
+    const countControl = document.getElementById('countControl');
+    const countValue = document.getElementById('countValue');
+    
+    let animationRunning = false;
+    let animationFrameId = null;
+    let holds = [];
+    let animationType = 'animate'; // 'animate', 'pulse', or 'trace'
+    
+    // Update speed display
+    speedControl.addEventListener('input', function() {
+        speedValue.textContent = this.value;
+    });
+    
+    // Update count display
+    countControl.addEventListener('input', function() {
+        countValue.textContent = this.value;
+    });
+    
+    // Get holds from SVG
+    function getHoldsFromSvg() {
+        // Try to get from hidden SVG object first
+        const hiddenSvgObject = document.getElementById('hiddenSvg');
+        if (hiddenSvgObject && hiddenSvgObject.contentDocument) {
+            const svg = hiddenSvgObject.contentDocument.querySelector('svg');
+            if (svg) {
+                console.log('Found holds in hidden SVG:', svg.querySelectorAll('.hold').length);
+                return svg.querySelectorAll('.hold');
+            }
+        }
+        
+        // Fallback: try the main SVG object
+        const svgObject = document.getElementById('wallSvg');
+        if (svgObject && svgObject.contentDocument) {
+            const svg = svgObject.contentDocument.querySelector('svg');
+            if (svg) {
+                console.log('Found holds in main SVG:', svg.querySelectorAll('.hold').length);
+                return svg.querySelectorAll('.hold');
+            }
+        }
+        
+        // Last resort: fetch SVG content via AJAX
+        return fetch('{{ wall.svg_file.url }}')
+            .then(response => response.text())
+            .then(svgText => {
+                const parser = new DOMParser();
+                const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+                const svg = svgDoc.querySelector('svg');
+                if (svg) {
+                    console.log('Found holds in fetched SVG:', svg.querySelectorAll('.hold').length);
+                    return svg.querySelectorAll('.hold');
+                }
+                return [];
+            })
+            .catch(error => {
+                console.error('Error loading SVG:', error);
+                return [];
+            });
+    }
+    
+    // Initialize holds
+    function initializeHolds() {
+        holds = [];
+        const holdElements = getHoldsFromSvg();
+        
+        // If getHoldsFromSvg returned a promise (from fetch), wait for it
+        if (holdElements instanceof Promise) {
+            holdElements.then(elements => {
+                processHoldElements(elements);
+            });
+        } else {
+            processHoldElements(holdElements);
+        }
+    }
+    
+    // Process hold elements
+    function processHoldElements(holdElements) {
+        holdElements.forEach((hold, index) => {
+            const rect = hold.getBoundingClientRect();
+            const svgRect = hold.ownerSVGElement.getBoundingClientRect();
+            
+            // Store original properties
+            const originalFill = hold.style.fill || '#cccccc';
+            const originalStroke = hold.style.stroke || '#333333';
+            const originalStrokeWidth = hold.style.strokeWidth || '2';
+            
+            holds.push({
+                element: hold,
+                originalFill: originalFill,
+                originalStroke: originalStroke,
+                originalStrokeWidth: originalStrokeWidth,
+                x: parseFloat(hold.getAttribute('x') || 0),
+                y: parseFloat(hold.getAttribute('y') || 0),
+                width: parseFloat(hold.getAttribute('width') || 0),
+                height: parseFloat(hold.getAttribute('height') || 0),
+                animationPhase: Math.random() * Math.PI * 2, // Random starting phase
+                animationSpeed: 0.5 + Math.random() * 1.5, // Random speed
+                pulsePhase: Math.random() * Math.PI * 2,
+                traceProgress: 0,
+                tracePath: []
+            });
+        });
+    }
+    
+    // Animate holds with movement
+    function animateHoldsMovement() {
+        const speedMultiplier = parseInt(speedControl.value) / 5;
+        const time = Date.now() / 1000;
+        
+        console.log('Animating holds:', holds.length);
+        
+        holds.forEach(hold => {
+            const offsetX = Math.sin(time * hold.animationSpeed + hold.animationPhase) * 10;
+            const offsetY = Math.cos(time * hold.animationSpeed * 0.7 + hold.animationPhase) * 10;
+            
+            if (hold.element && hold.element.setAttribute) {
+                hold.element.setAttribute('transform', `translate(${offsetX}, ${offsetY})`);
+            }
+        });
+    }
+    
+    // Pulse holds with color changes
+    function pulseHoldsColor() {
+        const speedMultiplier = parseInt(speedControl.value) / 5;
+        const time = Date.now() / 1000;
+        
+        console.log('Pulsing holds:', holds.length);
+        
+        holds.forEach(hold => {
+            const pulseIntensity = (Math.sin(time * speedMultiplier + hold.pulsePhase) + 1) / 2;
+            const red = Math.floor(204 + pulseIntensity * 51); // 204-255
+            const green = Math.floor(100 + pulseIntensity * 155); // 100-255
+            const blue = Math.floor(100 + pulseIntensity * 155); // 100-255
+            
+            if (hold.element) {
+                hold.element.style.fill = `rgb(${red}, ${green}, ${blue})`;
+                hold.element.style.stroke = `rgb(${red * 0.5}, ${green * 0.5}, ${blue * 0.5})`;
+            }
+        });
+    }
+    
+    // Trace paths between holds
+    function traceHoldPaths() {
+        const speedMultiplier = parseInt(speedControl.value) / 5;
+        const time = Date.now() / 1000;
+        
+        console.log('Tracing paths between holds:', holds.length);
+        
+        // Clear previous paths
+        const existingPaths = animationLayer.querySelectorAll('.trace-path');
+        existingPaths.forEach(path => path.remove());
+        
+        // Create new paths
+        const activeHolds = holds.filter((_, index) => index < parseInt(countControl.value));
+        
+        for (let i = 0; i < activeHolds.length - 1; i++) {
+            const hold1 = activeHolds[i];
+            const hold2 = activeHolds[i + 1];
+            
+            // Calculate path with some curve
+            const midX = (hold1.x + hold1.width/2 + hold2.x + hold2.width/2) / 2;
+            const midY = (hold1.y + hold1.height/2 + hold2.y + hold2.height/2) / 2 - 50;
+            
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const d = `M ${hold1.x + hold1.width/2} ${hold1.y + hold1.height/2} Q ${midX} ${midY} ${hold2.x + hold2.width/2} ${hold2.y + hold2.height/2}`;
+            
+            path.setAttribute('d', d);
+            path.setAttribute('stroke', `hsl(${(time * 50 + i * 30) % 360}, 70%, 50%)`);
+            path.setAttribute('stroke-width', '3');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke-dasharray', '10, 5');
+            path.setAttribute('class', 'trace-path');
+            path.style.opacity = '0.7';
+            path.style.strokeDashoffset = `${(time * speedMultiplier * 20) % 15}`;
+            
+            // Add path to SVG
+            const hiddenSvgObject = document.getElementById('hiddenSvg');
+            if (hiddenSvgObject && hiddenSvgObject.contentDocument) {
+                const svg = hiddenSvgObject.contentDocument.querySelector('svg');
+                if (svg) {
+                    svg.appendChild(path);
+                }
+            }
+        }
+    }
+    
+    // Update animation based on current type
+    function updateAnimation() {
+        if (!animationRunning) return;
+        
+        switch(animationType) {
+            case 'animate':
+                animateHoldsMovement();
+                break;
+            case 'pulse':
+                pulseHoldsColor();
+                break;
+            case 'trace':
+                traceHoldPaths();
+                break;
+        }
+        
+        animationFrameId = requestAnimationFrame(updateAnimation);
+    }
+    
+    // Start animation
+    function startAnimation(type = 'animate') {
+        if (animationRunning) return;
+        
+        animationType = type;
+        animationRunning = true;
+        
+        if (holds.length === 0) {
+            initializeHolds();
+        }
+        
+        updateAnimation();
+    }
+    
+    // Stop animation
+    function stopAnimation() {
+        animationRunning = false;
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+        
+        // Reset holds to original state
+        holds.forEach(hold => {
+            hold.element.removeAttribute('transform');
+            hold.element.style.fill = hold.originalFill;
+            hold.element.style.stroke = hold.originalStroke;
+            hold.element.style.strokeWidth = hold.originalStrokeWidth;
+        });
+        
+        // Clear trace paths
+        const existingPaths = animationLayer.querySelectorAll('.trace-path');
+        existingPaths.forEach(path => path.remove());
+    }
+    
+    // Event listeners
+    startBtn.addEventListener('click', function() {
+        stopAnimation();
+        startAnimation('animate');
+    });
+    
+    stopBtn.addEventListener('click', function() {
+        stopAnimation();
+    });
+    
+    animateHoldsBtn.addEventListener('click', function() {
+        stopAnimation();
+        startAnimation('animate');
+    });
+    
+    pulseHoldsBtn.addEventListener('click', function() {
+        stopAnimation();
+        startAnimation('pulse');
+    });
+    
+    traceHoldsBtn.addEventListener('click', function() {
+        stopAnimation();
+        startAnimation('trace');
+    });
+    
+    // Wait for SVG to load before starting animation
+    const svgObject = document.getElementById('wallSvg');
+    const hiddenSvgObject = document.getElementById('hiddenSvg');
+    
+    // Start animation immediately when page loads
+    setTimeout(async () => {
+        console.log('Auto-starting animation after page load');
+        await startAnimation('animate');
+    }, 1000); // Give more time for SVG to load
+    
+    if (hiddenSvgObject) {
+        hiddenSvgObject.addEventListener('load', async function() {
+            console.log('Hidden SVG loaded, restarting animation');
+            await startAnimation('animate');
+        });
+    } else if (svgObject) {
+        svgObject.addEventListener('load', async function() {
+            console.log('Main SVG loaded, restarting animation');
+            await startAnimation('animate');
+        });
+    } else {
+        console.log('No SVG objects found, starting animation anyway');
+        await startAnimation('animate');
+    }
+});
+</script>
+
+<style>
+.hold {
+    transition: all 0.3s ease-out;
+}
+
+.trace-path {
+    transition: all 0.3s ease-out;
+}
+
+#animationLayer {
+    z-index: 5;
+}
+</style>
+{% endblock %}
