@@ -789,3 +789,8 @@ class WallAnimationView(UUIDLookupMixin, DetailView):
         context = super().get_context_data(**kwargs)
         # Add any additional context needed for the animation
         return context
+
+
+class DemoView(TemplateView):
+    """View for demo page."""
+    template_name = 'climber/demo.html'

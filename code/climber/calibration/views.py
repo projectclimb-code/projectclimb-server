@@ -385,134 +385,6 @@ def extract_frames(video_path: str, max_frames: int = 10) -> list:
     return frames
 
 
-#@login_required
-def calibration_manual(request, wall_id):
-    """
-    Create a manual calibration for a wall by selecting corresponding points
-    """
-    wall = get_object_or_404(Wall, id=wall_id)
-    
-    if request.method == 'POST':
-        # Check if this is an AJAX request
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        
-        # Handle form submission
-        name = request.POST.get('name', f'Manual Calibration {datetime.now().strftime("%Y-%m-%d %H:%M")}')
-        description = request.POST.get('description', '')
-        
-        # Get point data from form
-        image_points_str = request.POST.get('image_points', '[]')
-        svg_points_str = request.POST.get('svg_points', '[]')
-        
-        try:
-            image_points = json.loads(image_points_str)
-            svg_points = json.loads(svg_points_str)
-            
-            # Debug: Print the data types
-            print(f"DEBUG: image_points type: {type(image_points)}, value: {image_points}")
-            print(f"DEBUG: svg_points type: {type(svg_points)}, value: {svg_points}")
-            
-            # Validate points
-            calib_utils = CalibrationUtils()
-            is_valid, error_msg = calib_utils.validate_manual_points(image_points, svg_points)
-            
-            if not is_valid:
-                if is_ajax:
-                    return JsonResponse({'success': False, 'error': error_msg})
-                else:
-                    messages.error(request, f'Invalid points: {error_msg}')
-                    return render(request, 'climber/calibration/calibration_manual.html', {
-                        'wall': wall,
-                        'image_points': image_points_str,
-                        'svg_points': svg_points_str,
-                    })
-            
-            # Get calibration image if uploaded
-            calibration_image = None
-            if 'calibration_image' in request.FILES:
-                calibration_image = request.FILES['calibration_image']
-            
-            # Compute perspective transformation
-            image_size = (1920, 1080)  # Default size, should be updated based on actual image
-            if calibration_image:
-                # Read image to get actual size
-                image_bytes = calibration_image.read()
-                nparr = np.frombuffer(image_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                if image is not None:
-                    image_size = image.shape[:2][::-1]
-                    # Reset file pointer for saving
-                    calibration_image.seek(0)
-            
-            transform_matrix, reprojection_error = calib_utils.compute_manual_calibration(
-                image_points, svg_points, image_size
-            )
-            
-            # For now, use default camera calibration
-            camera_matrix = np.array([
-                [image_size[0], 0, image_size[0]/2],
-                [0, image_size[1], image_size[1]/2],
-                [0, 0, 1]
-            ], dtype=np.float32)
-            distortion_coeffs = np.zeros(5)
-            
-            # Convert numpy arrays to regular Python lists
-            transform_matrix = transform_matrix.tolist() if hasattr(transform_matrix, 'tolist') else transform_matrix
-            camera_matrix = camera_matrix.tolist() if hasattr(camera_matrix, 'tolist') else camera_matrix
-            distortion_coeffs = distortion_coeffs.tolist() if hasattr(distortion_coeffs, 'tolist') else distortion_coeffs
-            
-            # Create calibration record
-            try:
-                calibration = WallCalibration.objects.create(
-                    wall=wall,
-                    name=name,
-                    description=description,
-                    calibration_type='manual',
-                    camera_matrix=camera_matrix,
-                    distortion_coeffs=distortion_coeffs,
-                    perspective_transform=transform_matrix,
-                    manual_image_points=image_points,
-                    manual_svg_points=svg_points,
-                    reprojection_error=float(reprojection_error),
-                    calibration_image=calibration_image
-                )
-            except Exception as create_error:
-                #print(create_error)
-                print(f"DEBUG: Error creating WallCalibration: {type(create_error).__name__}: {create_error}")
-                print(f"DEBUG: camera_matrix: {type(camera_matrix)}")
-                print(f"DEBUG: distortion_coeffs: {type(distortion_coeffs)}")
-                print(f"DEBUG: perspective_transform: {type(transform_matrix)}")
-                print(f"DEBUG: manual_image_points: {type(image_points)}")
-                print(f"DEBUG: manual_svg_points: {type(svg_points)}")
-                raise create_error
-            
-            if is_ajax:
-                return JsonResponse({
-                    'success': True,
-                    'calibration_id': calibration.id,
-                    'redirect_url': reverse('calibration_detail', kwargs={'wall_id': wall_id, 'calibration_id': calibration.id})
-                })
-            else:
-                messages.success(request, f'Manual calibration "{name}" created successfully!')
-                return redirect('calibration_detail', wall_id=wall_id, calibration_id=calibration.id)
-            
-        except json.JSONDecodeError:
-            if is_ajax:
-                return JsonResponse({'success': False, 'error': 'Invalid point data format'})
-            else:
-                messages.error(request, 'Invalid point data format')
-        except Exception as e:
-            if is_ajax:
-                return JsonResponse({'success': False, 'error': str(e)})
-            else:
-                messages.error(request, f'Error creating calibration: {str(e)}')
-    
-    return render(request, 'climber/calibration/calibration_manual.html', {
-        'wall': wall,
-        'image_points': '[]',
-        'svg_points': '[]',
-    })
-
 
 @csrf_exempt
 @require_http_methods(['POST'])
@@ -828,12 +700,6 @@ def calibration_manual_points(request, wall_id):
             camera_matrix = camera_matrix.tolist() if hasattr(camera_matrix, 'tolist') else camera_matrix
             distortion_coeffs = distortion_coeffs.tolist() if hasattr(distortion_coeffs, 'tolist') else distortion_coeffs
             
-            # Get dimensions from form
-            manual_image_width = request.POST.get('manual_image_width')
-            manual_image_height = request.POST.get('manual_image_height')
-            manual_svg_width = request.POST.get('manual_svg_width')
-            manual_svg_height = request.POST.get('manual_svg_height')
-
             # Create calibration record
             calibration = WallCalibration.objects.create(
                 wall=wall,
@@ -846,12 +712,11 @@ def calibration_manual_points(request, wall_id):
                 manual_image_points=image_points,
                 manual_svg_points=svg_points,
                 reprojection_error=float(reprojection_error),
-                calibration_image=calibration_image,
-                manual_image_width=manual_image_width,
-                manual_image_height=manual_image_height,
-                manual_svg_width=manual_svg_width,
-                manual_svg_height=manual_svg_height
+                calibration_image=calibration_image
             )
+
+            # Generate and save the overlay image
+            calib_utils.generate_overlay_image(calibration)
             
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({

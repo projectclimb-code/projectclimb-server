@@ -14,12 +14,12 @@ from .views import (
     SessionRecordingViewSet,
     TaskManagementView, trigger_fake_session_task, get_task_status,
     wall_upload_svg, wall_upload_image, wall_capture_camera_image,
-    WallAnimationView,
+    WallAnimationView, DemoView,
 )
 from .calibration.views import (
     wall_calibration_list, calibration_create, calibration_detail,
     calibration_activate, calibration_delete, api_detect_markers,
-    calibration_manual, api_upload_calibration_image, api_save_manual_calibration,
+    api_upload_calibration_image,
     wall_svg_overlay, wall_calibrated_svg_data, calibration_manual_points
 )
 
@@ -74,14 +74,12 @@ urlpatterns = [
     # Calibration URLs
     path('calibration/wall/<int:wall_id>/', wall_calibration_list, name='wall_calibration_list'),
     path('calibration/wall/<int:wall_id>/create/', calibration_create, name='calibration_create'),
-    path('calibration/wall/<int:wall_id>/manual/', calibration_manual, name='calibration_manual'),
     path('calibration/wall/<int:wall_id>/manual-points/', calibration_manual_points, name='calibration_manual_points'),
     path('calibration/wall/<int:wall_id>/<int:calibration_id>/', calibration_detail, name='calibration_detail'),
     path('calibration/wall/<int:wall_id>/<int:calibration_id>/activate/', calibration_activate, name='calibration_activate'),
     path('calibration/wall/<int:wall_id>/<int:calibration_id>/delete/', calibration_delete, name='calibration_delete'),
     path('calibration/wall/<int:wall_id>/detect-markers/', api_detect_markers, name='api_detect_markers'),
     path('calibration/wall/<int:wall_id>/upload-calibration-image/', api_upload_calibration_image, name='api_upload_calibration_image'),
-    path('calibration/wall/<int:wall_id>/save-manual-calibration/', api_save_manual_calibration, name='api_save_manual_calibration'),
     path('calibration/wall/<int:wall_id>/svg-overlay/', wall_svg_overlay, name='wall_svg_overlay'),
     path('calibration/wall/<int:wall_id>/svg-data/', wall_calibrated_svg_data, name='wall_calibrated_svg_data'),
 
@@ -118,4 +116,7 @@ urlpatterns = [
     path('tasks/', TaskManagementView.as_view(), name='task_management'),
     path('tasks/trigger-fake-session/', trigger_fake_session_task, name='trigger_fake_session_task'),
     path('tasks/status/<str:task_id>/', get_task_status, name='get_task_status'),
+    
+    # Demo Page
+    path('demo/', DemoView.as_view(), name='demo'),
 ]

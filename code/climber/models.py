@@ -147,7 +147,6 @@ class WallCalibration(BaseModel):
         max_length=20,
         choices=[
             ('aruco', 'ArUco Markers'),
-            ('manual', 'Manual Points'),
             ('manual_points', 'Manual Point Calibration'),
         ],
         default='aruco',
@@ -177,14 +176,11 @@ class WallCalibration(BaseModel):
         blank=True,
         help_text="List of corresponding SVG points [(x1,y1), (x2,y2), ...]"
     )
-    manual_image_width = models.FloatField(null=True, blank=True, help_text="Width of the image used for manual calibration")
-    manual_image_height = models.FloatField(null=True, blank=True, help_text="Height of the image used for manual calibration")
-    manual_svg_width = models.FloatField(null=True, blank=True, help_text="Width of the SVG used for manual calibration")
-    manual_svg_height = models.FloatField(null=True, blank=True, help_text="Height of the SVG used for manual calibration")
     
     # Calibration metadata
     calibration_image = models.ImageField(upload_to='calibration_images/', null=True, blank=True)
     reprojection_error = models.FloatField(null=True, blank=True, help_text="Calibration accuracy measure")
+    overlay_image = models.ImageField(upload_to='calibration_overlays/', null=True, blank=True, help_text="Generated image with SVG overlay")
     
     # Status
     is_active = models.BooleanField(default=True)

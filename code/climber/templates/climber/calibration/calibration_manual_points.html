@@ -165,10 +165,6 @@
         <!-- Hidden fields for point data -->
         <input type="hidden" id="imagePoints" name="image_points" value="[]">
         <input type="hidden" id="svgPoints" name="svg_points" value="[]">
-        <input type="hidden" id="manualImageWidth" name="manual_image_width">
-        <input type="hidden" id="manualImageHeight" name="manual_image_height">
-        <input type="hidden" id="manualSvgWidth" name="manual_svg_width">
-        <input type="hidden" id="manualSvgHeight" name="manual_svg_height">
         
         <!-- Action Buttons -->
         <div class="flex justify-between">
@@ -314,53 +310,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const r = container.getBoundingClientRect();
     const x = evt.clientX - r.left;
     const y = evt.clientY - r.top;
-    console.log('relativeXY calculation:', {
-      containerRect: r,
-      clientX: evt.clientX,
-      clientY: evt.clientY,
-      result: { x, y }
-    });
     return { x, y };
   }
 
   // Marker management
   function renderDots(which) {
-    console.log(`renderDots called for ${which}`);
     const dotsLayer = which === 'img' ? els.imgDots : els.svgDots;
-    console.log(`dotsLayer:`, dotsLayer);
     dotsLayer.innerHTML = '';
     const pts = which === 'img' ? state.imgPts : state.svgPts;
-    console.log(`Points to render:`, pts);
     pts.forEach((p, i) => {
       const dot = document.createElement('div');
       dot.className = 'dot ' + (which === 'img' ? 'img' : 'svg');
-      dot.style.position = 'absolute';
+      console.log(`Rendering dot ${i+1} for ${which} at`, p, `left: ${p.x}px`, `top: ${p.y}px`);
       dot.style.left = p.x + 'px';
       dot.style.top = p.y + 'px';
-      dot.style.width = 'var(--dot-size)';
-      dot.style.height = 'var(--dot-size)';
-      console.log(`Creating dot at (${p.x}, ${p.y}) with size ${getComputedStyle(document.documentElement).getPropertyValue('--dot-size')}`);
       const label = document.createElement('div');
       label.className = 'dot-label';
       label.textContent = String(i + 1);
-      label.style.fontSize = '12px';
-      label.style.fontWeight = 'bold';
       dot.appendChild(label);
       dotsLayer.appendChild(dot);
-      console.log(`Dot appended to layer, final styles:`, {
-        position: dot.style.position,
-        left: dot.style.left,
-        top: dot.style.top,
-        width: dot.style.width,
-        height: dot.style.height,
-        zIndex: dot.style.zIndex,
-        dotsLayerChildren: dotsLayer.children.length
-      });
-      
-      // Force a reflow to ensure the dot is visible
-      dot.offsetHeight;
     });
-    console.log(`renderDots completed for ${which}, total dots in layer: ${dotsLayer.children.length}`);
     updateFitButton();
   }
 
@@ -656,17 +625,15 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('calibrationForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
-    // Update hidden fields with current point data
-    els.imagePoints.value = JSON.stringify(state.imgPts.map(p => [p.x, p.y]));
-    els.svgPoints.value = JSON.stringify(state.svgPts.map(p => [p.x, p.y]));
-
-    // Also update the hidden fields with the dimensions
+    // Normalize and update hidden fields with current point data
     const imageRect = els.imageStage.getBoundingClientRect();
     const svgRect = els.svgStage.getBoundingClientRect();
-    document.getElementById('manualImageWidth').value = imageRect.width;
-    document.getElementById('manualImageHeight').value = imageRect.height;
-    document.getElementById('manualSvgWidth').value = svgRect.width;
-    document.getElementById('manualSvgHeight').value = svgRect.height;
+
+    const normImgPts = state.imgPts.map(p => [p.x / imageRect.width, p.y / imageRect.height]);
+    const normSvgPts = state.svgPts.map(p => [p.x / svgRect.width, p.y / svgRect.height]);
+
+    els.imagePoints.value = JSON.stringify(normImgPts);
+    els.svgPoints.value = JSON.stringify(normSvgPts);
     
     // Submit form using fetch API
     const formData = new FormData(this);

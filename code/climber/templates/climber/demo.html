@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SVG Hold Visualizer</title>
+  <style>
+    body {
+      background: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      font-family: system-ui, sans-serif;
+    }
+
+    #svg-container svg {
+      width: 80vw;
+      height: auto;
+      display: block;
+    }
+
+    /* Pulse for "touched" */
+    @keyframes pulse {
+      0%, 100% {
+        stroke-width: 2;
+        stroke: #f59e0b;
+        filter: drop-shadow(0 0 3px #fbbf24);
+      }
+      50% {
+        stroke-width: 4;
+        stroke: #d97706;
+        filter: drop-shadow(0 0 8px #facc15);
+      }
+    }
+
+    /* Hidden (for untouched holds) */
+    .hidden {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <div id="svg-container"><p>Loading SVG...</p></div>
+
+  <script>
+    const WS_URL = "wss://climber.dev.maptnh.net/ws/holds/";
+    let svgContainer, paths = new Map();
+    let showUntouched = false; // hidden by default
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      svgContainer = document.getElementById("svg-container");
+      // Try local SVG first, then fall back to external URL
+      try {
+        await loadSVG("/media/svg_files/wall.svg");
+      } catch (err) {
+        console.log("Failed to load local SVG, trying external URL:", err);
+        await loadSVG("https://static.maptnh.net/drawing.svg");
+      }
+      connectWebSocket();
+
+      // Keyboard listener: toggle untouched visibility with 's'
+      document.addEventListener("keydown", e => {
+        if (e.key.toLowerCase() === "s") {
+          showUntouched = !showUntouched;
+          toggleUntouched(showUntouched);
+        }
+      });
+    });
+
+    async function loadSVG(url) {
+      try {
+        console.log("Loading SVG from:", url);
+        // For local files, use regular fetch; for external files, we need a different approach
+        const isLocal = url.startsWith('/');
+        const options = isLocal ?
+          { method: 'GET' } :
+          { method: 'GET', mode: 'no-cors' };
+        
+        const response = await fetch(url, options);
+        console.log("Response status:", response.status, response.type);
+
+        // For no-cors requests, we can't read the response directly
+        if (!isLocal && response.type === 'opaque') {
+          throw new Error("Cannot read external SVG due to CORS restrictions");
+        }
+
+        const svgText = await response.text();
+        console.log("SVG text length:", svgText.length);
+        svgContainer.innerHTML = svgText;
+
+        // Debug: Check if SVG was loaded
+        const svgElement = svgContainer.querySelector('svg');
+        if (!svgElement) {
+          console.error("No SVG element found in loaded content");
+          return;
+        }
+        console.log("SVG element found:", svgElement);
+
+        // Collect all hold paths into a Map for fast lookup
+        const allPaths = svgContainer.querySelectorAll("path");
+        console.log("Total paths found:", allPaths.length);
+        
+        svgContainer.querySelectorAll("path.hold").forEach(path => {
+          const id = path.id.replace("hold_", "hold_");
+          paths.set(id, path);
+          console.log("Found hold:", id, path);
+
+          // Default style
+          Object.assign(path.style, {
+            fill: "none",
+            stroke: "#94a3b8",
+            strokeWidth: "2",
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            transition: "all 0.3s ease",
+          });
+
+          path.classList.add("hidden"); // start hidden
+        });
+
+        console.log(`Loaded ${paths.size} hold elements.`);
+      } catch (err) {
+        console.error("Failed to load SVG:", err);
+        svgContainer.innerHTML = `<p style='color:red'>Error loading SVG: ${err.message}</p>`;
+      }
+    }
+
+    function connectWebSocket() {
+      const ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => console.log("Connected to", WS_URL);
+      ws.onmessage = event => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data?.session?.holds) updateHolds(data.session.holds);
+        } catch (e) {
+          console.error("Invalid JSON from WS:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.warn("WebSocket closed. Reconnecting in 5s...");
+        setTimeout(connectWebSocket, 5000);
+      };
+
+      ws.onerror = err => console.error("WebSocket error:", err);
+    }
+
+    function updateHolds(holds) {
+      holds.forEach(hold => {
+        const el = paths.get(String(hold.id));
+        if (!el) return;
+
+        el.style.animation = "none"; // reset animation
+
+        if (hold.status === "untouched") {
+          el.style.stroke = "#94a3b8";
+          el.style.strokeWidth = "2";
+          el.style.filter = "none";
+          if (!showUntouched) el.classList.add("hidden");
+          else el.classList.remove("hidden");
+        } else if (hold.status === "touched") {
+          el.classList.remove("hidden");
+          el.style.animation = "pulse 1.5s infinite ease-in-out";
+        } else if (hold.status === "completed") {
+          el.classList.remove("hidden");
+          el.style.stroke = "#22c55e";
+          el.style.strokeWidth = "3";
+          el.style.filter = "drop-shadow(0 0 4px #86efac)";
+          console.log(`Hold completed: ID ${hold.id}, Element: ${el.id}`);
+        }
+      });
+    }
+
+    function toggleUntouched(show) {
+      paths.forEach(path => {
+        const isUntouched = path.style.stroke === "rgb(148, 163, 184)" || path.style.stroke === "#94a3b8";
+        if (isUntouched) {
+          if (show) path.classList.remove("hidden");
+          else path.classList.add("hidden");
+        }
+      });
+      console.log(`Untouched holds are now ${show ? "visible" : "hidden"}.`);
+    }
+  </script>
+</body>
+</html>
+
+
+
+</div>

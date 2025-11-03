@@ -11,13 +11,84 @@ import json
 from typing import Dict, List, Tuple, Optional, Any
 import logging
 
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPM
+from PIL import Image
+import io
+
 from .aruco_detector import ArUcoDetector
 
 logger = logging.getLogger(__name__)
 
 
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPM
+from PIL import Image
+import io
+
 class CalibrationUtils:
     """Utilities for computing and managing calibration transformations"""
+    
+    def generate_overlay_image(self, calibration):
+        """Generate and save a static overlay image for the calibration."""
+        try:
+            if not calibration.wall.wall_image or not calibration.wall.svg_file:
+                logger.warning("Wall image or SVG file not found, cannot generate overlay.")
+                return
+
+            # 1. Load wall image
+            wall_image_path = calibration.wall.wall_image.path
+            wall_image = cv2.imread(wall_image_path)
+            if wall_image is None:
+                logger.error(f"Failed to load wall image from {wall_image_path}")
+                return
+            orig_img_h, orig_img_w = wall_image.shape[:2]
+
+            # 2. Rasterize SVG to a PNG with a magenta background
+            drawing = svg2rlg(calibration.wall.svg_file.path)
+            png_data = renderPM.drawToString(drawing, fmt="PNG", bg=0xFF00FF) # Magenta background
+            
+            pil_image = Image.open(io.BytesIO(png_data)).convert("RGB")
+            svg_image_rgb = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+            # Create a mask for the magenta background and an alpha channel
+            magenta_lower = np.array([255, 0, 255], dtype="uint8")
+            magenta_upper = np.array([255, 0, 255], dtype="uint8")
+            mask = cv2.inRange(svg_image_rgb, magenta_lower, magenta_upper)
+            alpha = 255 - mask
+            svg_image = cv2.merge([svg_image_rgb, alpha])
+            orig_svg_h, orig_svg_w = svg_image.shape[:2]
+
+            # 3. Un-normalize points
+            norm_img_pts = np.array(calibration.manual_image_points, dtype=np.float32)
+            norm_svg_pts = np.array(calibration.manual_svg_points, dtype=np.float32)
+
+            img_pts = norm_img_pts * np.array([orig_img_w, orig_img_h], dtype=np.float32)
+            svg_pts = norm_svg_pts * np.array([orig_svg_w, orig_svg_h], dtype=np.float32)
+
+            # 4. Calculate homography from SVG to image coordinates
+            transform_matrix, _ = cv2.findHomography(svg_pts, img_pts)
+
+            # 5. Warp the SVG image
+            warped_svg = cv2.warpPerspective(svg_image, transform_matrix, (orig_img_w, orig_img_h))
+
+            # 6. Overlay the warped SVG onto the wall image
+            alpha_channel = warped_svg[:, :, 3] / 255.0
+            for c in range(0, 3):
+                wall_image[:, :, c] = (1.0 - alpha_channel) * wall_image[:, :, c] + alpha_channel * warped_svg[:, :, c]
+
+            # 7. Save the result
+            from django.core.files.base import ContentFile
+            is_success, buffer = cv2.imencode(".png", wall_image)
+            if is_success:
+                calibration.overlay_image.save(f"overlay_{calibration.uuid}.png", ContentFile(buffer.tobytes()))
+                calibration.save()
+                logger.info(f"Successfully generated and saved overlay image for calibration {calibration.id}")
+            else:
+                logger.error(f"Failed to encode overlay image for calibration {calibration.id}")
+
+        except Exception as e:
+            logger.error(f"Error generating overlay image: {e}")
     
     def __init__(self):
         self.aruco_detector = None
@@ -134,7 +205,7 @@ class CalibrationUtils:
                         test_pts[2][0]*(test_pts[3][1]-test_pts[0][1]) +
                         test_pts[3][0]*(test_pts[0][1]-test_pts[1][1])
                     )
-                    if area < 1000:  # Arbitrary small threshold (increased from 100)
+                    if area < 1e-4:  # Threshold for normalized coordinates
                         return False, "Selected points are too close to being collinear"
             except Exception as e:
                 logger.warning(f"Error checking point collinearity: {e}")

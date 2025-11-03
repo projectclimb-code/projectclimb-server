@@ -25,7 +25,7 @@
                         <span class="font-medium">ArUco Markers</span>
                     </label>
                     <label class="flex items-center">
-                        <input type="radio" name="calibration_type" value="manual" class="mr-2" id="manualType">
+                        <input type="radio" name="calibration_type" value="manual_points" class="mr-2" id="manualType">
                         <span class="font-medium">Manual Point Selection</span>
                     </label>
                 </div>
@@ -197,7 +197,7 @@ document.getElementById('arucoType').addEventListener('change', function() {
 });
 
 document.getElementById('manualType').addEventListener('change', function() {
-    updateCalibrationType('manual');
+    updateCalibrationType('manual_points');
 });
 
 function updateCalibrationType(type) {
@@ -263,7 +263,7 @@ document.getElementById('manualCalibrationButton').addEventListener('click', fun
     }));
     
     // Redirect to manual calibration page
-    window.location.href = `{% url 'calibration_manual' wall.pk %}`;
+    window.location.href = `{% url 'calibration_manual_points' wall.pk %}`;
 });
 
 // Check for stored form data on page load

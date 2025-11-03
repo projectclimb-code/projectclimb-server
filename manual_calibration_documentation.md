@@ -49,8 +49,7 @@ The `CalibrationUtils` class has been extended with:
 
 ### 3. Views and Templates
 
-- `calibration_manual()` - View for manual calibration page
-- `calibration_manual.html` - Template with interactive point selection
+
 - Updated `calibration_create.html` - Added option to choose calibration type
 
 ### 4. JavaScript Features
