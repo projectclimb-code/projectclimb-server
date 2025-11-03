@@ -180,3 +180,4 @@ runs/
 .vscode/
 sync_*
 yolo8n.pt
+.envrc
