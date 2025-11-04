@@ -613,7 +613,7 @@ class PoseSkeletonView(TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['websocket_url'] = self.request.GET.get('ws_url', 'ws://localhost:8000/ws/pose/')
+        context['websocket_url'] = self.request.GET.get('ws_url', 'wss://climber.dev.maptnh.net:443/ws/pose/')
         return context
 
 

@@ -479,12 +479,32 @@ class WebSocketSessionTracker:
         
         # Setup calibration utils
         self.calibration_utils = CalibrationUtils()
-        self.transform_matrix = np.array(self.calibration.perspective_transform, dtype=np.float32)
+        
+        # Check if perspective_transform exists and is valid
+        if not self.calibration.perspective_transform:
+            logger.error("No perspective transform found in calibration")
+            return False
+        
+        try:
+            self.transform_matrix = np.array(self.calibration.perspective_transform, dtype=np.float32)
+            
+            # Validate transformation matrix
+            if self.transform_matrix.shape != (3, 3):
+                logger.error(f"Invalid transformation matrix shape: {self.transform_matrix.shape}, expected (3, 3)")
+                return False
+                
+            # Check for invalid values
+            if np.any(np.isnan(self.transform_matrix)) or np.any(np.isinf(self.transform_matrix)):
+                logger.error("Transformation matrix contains NaN or infinite values")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error loading transformation matrix: {e}")
+            return False
         
         # Debug: Log calibration details
         logger.debug(f"Calibration name: {self.calibration.name}")
         logger.debug(f"Wall dimensions: {self.wall.width_mm}x{self.wall.height_mm} mm")
-        logger.debug(f"Wall SVG dimensions: {self.wall.wall_width_mm}x{self.wall.wall_height_mm} mm")
         logger.debug(f"Perspective transform matrix:\n{self.transform_matrix}")
         
         # Load hold centers from SVG
@@ -671,6 +691,44 @@ def transform_landmarks_to_svg_coordinates(landmarks, calibration_utils, transfo
     logger.debug(f"Transform matrix shape: {transform_matrix.shape}")
     logger.debug(f"Transform matrix:\n{transform_matrix}")
     
+    # Check if transformation matrix is valid
+    if transform_matrix is None or transform_matrix.size == 0:
+        logger.error("Invalid transformation matrix")
+        return []
+    
+    # Test transformation with a known point
+    test_point = (width/2, height/2)  # Center of image
+    test_svg = calibration_utils.transform_point_to_svg(test_point, transform_matrix)
+    logger.debug(f"Test transformation: image center ({test_point[0]:.1f}, {test_point[1]:.1f}) -> SVG ({test_svg[0]:.1f}, {test_svg[1]:.1f})")
+    
+    # Test transformation with image corners to get possible hand position range
+    corners = [
+        (0, 0),  # Top-left
+        (width, 0),  # Top-right
+        (0, height),  # Bottom-left
+        (width, height)  # Bottom-right
+    ]
+    
+    corner_names = ["top-left", "top-right", "bottom-left", "bottom-right"]
+    svg_corners = []
+    
+    for i, (corner_x, corner_y) in enumerate(corners):
+        svg_corner = calibration_utils.transform_point_to_svg((corner_x, corner_y), transform_matrix)
+        svg_corners.append(svg_corner)
+        logger.debug(f"Test transformation: image {corner_names[i]} ({corner_x:.1f}, {corner_y:.1f}) -> SVG ({svg_corner[0]:.1f}, {svg_corner[1]:.1f})")
+    
+    # Calculate min and max possible hand positions
+    if svg_corners:
+        x_coords = [corner[0] for corner in svg_corners if corner is not None]
+        y_coords = [corner[1] for corner in svg_corners if corner is not None]
+        
+        if x_coords and y_coords:
+            min_x, max_x = min(x_coords), max(x_coords)
+            min_y, max_y = min(y_coords), max(y_coords)
+            logger.info(f"Possible hand position range after transformation:")
+            logger.info(f"  X: {min_x:.1f} to {max_x:.1f}")
+            logger.info(f"  Y: {min_y:.1f} to {max_y:.1f}")
+    
     for i, landmark in enumerate(landmarks):
         # Convert normalized position to image coordinates
         img_x = landmark['x'] * width
@@ -685,6 +743,20 @@ def transform_landmarks_to_svg_coordinates(landmarks, calibration_utils, transfo
             (img_x, img_y),
             transform_matrix
         )
+        
+        # Check if transformation produced valid results
+        if svg_point and (svg_point[0] < 0 or svg_point[1] < 0):
+            if i in [19, 20, 21, 22, 23, 24]:  # Hand landmarks
+                logger.warning(f"Landmark {i} produced negative coordinates: {svg_point}")
+            
+            # Try a simple linear scaling as fallback
+            # This assumes SVG coordinates are roughly proportional to image coordinates
+            svg_point_fallback = (img_x * 0.8, img_y * 0.8)  # Simple scaling factor
+            
+            if i in [19, 20, 21, 22, 23, 24]:  # Hand landmarks
+                logger.debug(f"Landmark {i} fallback: SVG=({svg_point_fallback[0]:.1f}, {svg_point_fallback[1]:.1f})")
+            
+            svg_point = svg_point_fallback
         
         # Debug: Log transformed hand landmarks
         if i in [19, 20, 21, 22, 23, 24] and svg_point:  # Hand landmarks

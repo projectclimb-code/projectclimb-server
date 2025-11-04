@@ -81,4 +81,5 @@ dependencies = [
     "loguru>=0.7.3",
     "lxml>=6.0.2",
     "numpy>=2,<2.3.0",
+    "homography>=0.1.7",
 ]

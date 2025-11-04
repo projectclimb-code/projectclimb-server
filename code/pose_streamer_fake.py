@@ -526,7 +526,14 @@ async def stream_fake_pose_landmarks() -> None:
 
                     try:
                         if landmarks:
-                            await websocket.send(json.dumps(landmarks))
+                            out = {
+                                "type": "pose",
+                                "timestamp": 1762281159873,
+                                "width": 640,
+                                "height": 480,
+                                "landmarks":landmarks
+                            }
+                            await websocket.send(json.dumps(out))
                     except websockets.exceptions.ConnectionClosed:
                         print("\nConnection lost. Reconnecting...")
                         break
