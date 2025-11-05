@@ -1,194 +1,598 @@
+
+
+
+<tool>
+<edit>
+<filename>fake_pose_streamer.html</filename>
+<content>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SVG Hold Visualizer</title>
-  <style>
-    body {
-      background: #f9fafb;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-      font-family: system-ui, sans-serif;
-    }
-
-    #svg-container svg {
-      width: 80vw;
-      height: auto;
-      display: block;
-    }
-
-    /* Pulse for "touched" */
-    @keyframes pulse {
-      0%, 100% {
-        stroke-width: 2;
-        stroke: #f59e0b;
-        filter: drop-shadow(0 0 3px #fbbf24);
-      }
-      50% {
-        stroke-width: 4;
-        stroke: #d97706;
-        filter: drop-shadow(0 0 8px #facc15);
-      }
-    }
-
-    /* Hidden (for untouched holds) */
-    .hidden {
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake MediaPipe Pose Streamer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, input, button {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .status.connected {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .status.disconnected {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .pose-preview {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 300px;
+            position: relative;
+            overflow: hidden;
+        }
+        .pose-canvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
 </head>
 <body>
-  <div id="svg-container"><p>Loading SVG...</p></div>
-
-  <script>
-    const WS_URL = "wss://climber.dev.maptnh.net/ws/holds/";
-    let svgContainer, paths = new Map();
-    let showUntouched = false; // hidden by default
-
-    document.addEventListener("DOMContentLoaded", async () => {
-      svgContainer = document.getElementById("svg-container");
-      // Try local SVG first, then fall back to external URL
-      try {
-        await loadSVG("/media/svg_files/wall.svg");
-      } catch (err) {
-        console.log("Failed to load local SVG, trying external URL:", err);
-        await loadSVG("https://static.maptnh.net/drawing.svg");
-      }
-      connectWebSocket();
-
-      // Keyboard listener: toggle untouched visibility with 's'
-      document.addEventListener("keydown", e => {
-        if (e.key.toLowerCase() === "s") {
-          showUntouched = !showUntouched;
-          toggleUntouched(showUntouched);
-        }
-      });
-    });
-
-    async function loadSVG(url) {
-      try {
-        console.log("Loading SVG from:", url);
-        // For local files, use regular fetch; for external files, we need a different approach
-        const isLocal = url.startsWith('/');
-        const options = isLocal ?
-          { method: 'GET' } :
-          { method: 'GET', mode: 'no-cors' };
+    <div class="container">
+        <h1>Fake MediaPipe Pose Streamer</h1>
         
-        const response = await fetch(url, options);
-        console.log("Response status:", response.status, response.type);
-
-        // For no-cors requests, we can't read the response directly
-        if (!isLocal && response.type === 'opaque') {
-          throw new Error("Cannot read external SVG due to CORS restrictions");
-        }
-
-        const svgText = await response.text();
-        console.log("SVG text length:", svgText.length);
-        svgContainer.innerHTML = svgText;
-
-        // Debug: Check if SVG was loaded
-        const svgElement = svgContainer.querySelector('svg');
-        if (!svgElement) {
-          console.error("No SVG element found in loaded content");
-          return;
-        }
-        console.log("SVG element found:", svgElement);
-
-        // Collect all hold paths into a Map for fast lookup
-        const allPaths = svgContainer.querySelectorAll("path");
-        console.log("Total paths found:", allPaths.length);
+        <div class="control-group">
+            <label for="activity">Activity:</label>
+            <select id="activity">
+                <option value="walking">Walking</option>
+                <option value="dancing">Dancing</option>
+                <option value="climbing">Climbing</option>
+                <option value="jumping">Jumping</option>
+                <option value="waving">Waving</option>
+                <option value="sitting">Sitting</option>
+            </select>
+        </div>
         
-        svgContainer.querySelectorAll("path.hold").forEach(path => {
-          const id = path.id.replace("hold_", "hold_");
-          paths.set(id, path);
-          console.log("Found hold:", id, path);
+        <div class="control-group">
+            <label for="framerate">Framerate (fps):</label>
+            <input type="range" id="framerate" min="1" max="60" value="30">
+            <span id="framerate-value">30</span> fps
+        </div>
+        
+        <div class="control-group">
+            <button id="start-btn">Start Streaming</button>
+            <button id="stop-btn" disabled>Stop Streaming</button>
+        </div>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div class="pose-preview">
+            <canvas id="pose-canvas" class="pose-canvas"></canvas>
+        </div>
+    </div>
 
-          // Default style
-          Object.assign(path.style, {
-            fill: "none",
-            stroke: "#94a3b8",
-            strokeWidth: "2",
-            strokeLinecap: "round",
-            strokeLinejoin: "round",
-            transition: "all 0.3s ease",
-          });
+    <script>
+        // MediaPipe pose landmarks (33 points)
+        const POSE_LANDMARKS = [
+            "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner",
+            "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left",
+            "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+            "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index",
+            "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip",
+            "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel",
+            "right_heel", "left_foot_index", "right_foot_index"
+        ];
 
-          path.classList.add("hidden"); // start hidden
+        // Activity patterns with realistic human movement
+        const activityPatterns = {
+            walking: {
+                name: "Walking",
+                cycle: 60,
+                basePose: {
+                    // Standing pose
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.35, y: 0.4 },
+                    right_elbow: { x: 0.65, y: 0.4 },
+                    left_wrist: { x: 0.3, y: 0.5 },
+                    right_wrist: { x: 0.7, y: 0.5 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.4, y: 0.75 },
+                    right_knee: { x: 0.6, y: 0.75 },
+                    left_ankle: { x: 0.4, y: 0.9 },
+                    right_ankle: { x: 0.6, y: 0.9 }
+                }
+            },
+            dancing: {
+                name: "Dancing",
+                cycle: 30,
+                basePose: {
+                    // Arms up, ready to dance
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.3, y: 0.2 },
+                    right_elbow: { x: 0.7, y: 0.2 },
+                    left_wrist: { x: 0.2, y: 0.15 },
+                    right_wrist: { x: 0.8, y: 0.15 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.4, y: 0.75 },
+                    right_knee: { x: 0.6, y: 0.75 },
+                    left_ankle: { x: 0.4, y: 0.9 },
+                    right_ankle: { x: 0.6, y: 0.9 }
+                }
+            },
+            climbing: {
+                name: "Climbing",
+                cycle: 40,
+                basePose: {
+                    // Climbing stance
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.35, y: 0.4 },
+                    right_elbow: { x: 0.65, y: 0.4 },
+                    left_wrist: { x: 0.3, y: 0.5 },
+                    right_wrist: { x: 0.7, y: 0.5 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.4, y: 0.75 },
+                    right_knee: { x: 0.6, y: 0.75 },
+                    left_ankle: { x: 0.4, y: 0.9 },
+                    right_ankle: { x: 0.6, y: 0.9 }
+                }
+            },
+            jumping: {
+                name: "Jumping",
+                cycle: 20,
+                basePose: {
+                    // Jumping stance
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.35, y: 0.4 },
+                    right_elbow: { x: 0.65, y: 0.4 },
+                    left_wrist: { x: 0.3, y: 0.5 },
+                    right_wrist: { x: 0.7, y: 0.5 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.4, y: 0.75 },
+                    right_knee: { x: 0.6, y: 0.75 },
+                    left_ankle: { x: 0.4, y: 0.9 },
+                    right_ankle: { x: 0.6, y: 0.9 }
+                }
+            },
+            waving: {
+                name: "Waving",
+                cycle: 50,
+                basePose: {
+                    // Waving stance
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.35, y: 0.4 },
+                    right_elbow: { x: 0.65, y: 0.4 },
+                    left_wrist: { x: 0.3, y: 0.5 },
+                    right_wrist: { x: 0.7, y: 0.5 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.4, y: 0.75 },
+                    right_knee: { x: 0.6, y: 0.75 },
+                    left_ankle: { x: 0.4, y: 0.9 },
+                    right_ankle: { x: 0.6, y: 0.9 }
+                }
+            },
+            sitting: {
+                name: "Sitting",
+                cycle: 100,
+                basePose: {
+                    // Sitting pose
+                    left_shoulder: { x: 0.4, y: 0.3 },
+                    right_shoulder: { x: 0.6, y: 0.3 },
+                    left_elbow: { x: 0.35, y: 0.4 },
+                    right_elbow: { x: 0.65, y: 0.4 },
+                    left_wrist: { x: 0.3, y: 0.5 },
+                    right_wrist: { x: 0.7, y: 0.5 },
+                    left_hip: { x: 0.4, y: 0.6 },
+                    right_hip: { x: 0.6, y: 0.6 },
+                    left_knee: { x: 0.35, y: 0.75 },
+                    right_knee: { x: 0.65, y: 0.75 },
+                    left_ankle: { x: 0.3, y: 0.85 },
+                    right_ankle: { x: 0.7, y: 0.85 }
+                }
+            }
+        };
+
+        // Global variables
+        let websocket = null;
+        let streaming = false;
+        let frameInterval = null;
+        let currentFrame = 0;
+        let canvas = null;
+        let ctx = null;
+
+        // Initialize canvas
+        function initCanvas() {
+            canvas = document.getElementById('pose-canvas');
+            ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+        }
+
+        // Generate fake pose data
+        function generatePoseData(activity, frame) {
+            const pattern = activityPatterns[activity];
+            const landmarks = [];
+            
+            // Generate each landmark
+            for (let i = 0; i < POSE_LANDMARKS.length; i++) {
+                const landmarkName = POSE_LANDMARKS[i];
+                let x = 0.5; // Default center position
+                let y = 0.5;
+                let z = 0;
+                
+                // Apply activity-specific movements
+                if (pattern.basePose[landmarkName]) {
+                    const basePos = pattern.basePose[landmarkName];
+                    x = basePos.x;
+                    y = basePos.y;
+                    
+                    // Apply movement based on activity
+                    const phase = (frame % pattern.cycle) / pattern.cycle * Math.PI * 2;
+                    
+                    switch (activity) {
+                        case 'walking':
+                            // Walking motion - alternating leg movement with arm swing
+                            if (landmarkName === 'left_ankle') {
+                                // Left leg forward
+                                x += Math.sin(phase) * 0.05;
+                                y += Math.abs(Math.sin(phase)) * 0.05;
+                            } else if (landmarkName === 'right_ankle') {
+                                // Right leg forward (opposite phase)
+                                x += Math.sin(phase + Math.PI) * 0.05;
+                                y += Math.abs(Math.sin(phase + Math.PI)) * 0.05;
+                            } else if (landmarkName === 'left_knee') {
+                                // Left knee bend
+                                y += Math.abs(Math.sin(phase)) * 0.03;
+                            } else if (landmarkName === 'right_knee') {
+                                // Right knee bend (opposite phase)
+                                y += Math.abs(Math.sin(phase + Math.PI)) * 0.03;
+                            } else if (landmarkName === 'left_wrist') {
+                                // Left arm swing
+                                x += Math.sin(phase + Math.PI) * 0.05;
+                                y += Math.sin(phase + Math.PI) * 0.02;
+                            } else if (landmarkName === 'right_wrist') {
+                                // Right arm swing
+                                x += Math.sin(phase) * 0.05;
+                                y += Math.sin(phase) * 0.02;
+                            } else if (landmarkName === 'left_elbow') {
+                                // Left elbow bend
+                                x += Math.sin(phase + Math.PI) * 0.03;
+                                y += Math.sin(phase + Math.PI) * 0.01;
+                            } else if (landmarkName === 'right_elbow') {
+                                // Right elbow bend
+                                x += Math.sin(phase) * 0.03;
+                                y += Math.sin(phase) * 0.01;
+                            }
+                            break;
+                            
+                        case 'dancing':
+                            // Dancing motion - more exaggerated movements
+                            if (landmarkName === 'left_wrist') {
+                                // Left arm up and down
+                                y += Math.sin(phase * 2) * 0.15;
+                                x += Math.cos(phase * 2) * 0.05;
+                            } else if (landmarkName === 'right_wrist') {
+                                // Right arm up and down
+                                y += Math.sin(phase * 2) * 0.15;
+                                x += Math.cos(phase * 2 + Math.PI) * 0.05;
+                            } else if (landmarkName === 'left_elbow') {
+                                // Left elbow movement
+                                y += Math.sin(phase * 2) * 0.1;
+                                x += Math.cos(phase * 2) * 0.03;
+                            } else if (landmarkName === 'right_elbow') {
+                                // Right elbow movement
+                                y += Math.sin(phase * 2) * 0.1;
+                                x += Math.cos(phase * 2 + Math.PI) * 0.03;
+                            } else if (landmarkName === 'left_ankle') {
+                                // Left foot tap
+                                y += Math.abs(Math.sin(phase * 3)) * 0.03;
+                            } else if (landmarkName === 'right_ankle') {
+                                // Right foot tap
+                                y += Math.abs(Math.sin(phase * 3 + Math.PI)) * 0.03;
+                            }
+                            break;
+                            
+                        case 'climbing':
+                            // Climbing motion - reaching and pulling
+                            if (landmarkName === 'left_wrist') {
+                                // Left arm reaching
+                                x += Math.sin(phase) * 0.1;
+                                y -= Math.abs(Math.sin(phase)) * 0.15;
+                            } else if (landmarkName === 'right_wrist') {
+                                // Right arm reaching (opposite phase)
+                                x += Math.sin(phase + Math.PI) * 0.1;
+                                y -= Math.abs(Math.sin(phase + Math.PI)) * 0.15;
+                            } else if (landmarkName === 'left_elbow') {
+                                // Left elbow bend
+                                x += Math.sin(phase) * 0.07;
+                                y -= Math.abs(Math.sin(phase)) * 0.1;
+                            } else if (landmarkName === 'right_elbow') {
+                                // Right elbow bend
+                                x += Math.sin(phase + Math.PI) * 0.07;
+                                y -= Math.abs(Math.sin(phase + Math.PI)) * 0.1;
+                            } else if (landmarkName === 'left_ankle') {
+                                // Left foot push
+                                y += Math.abs(Math.sin(phase + Math.PI)) * 0.05;
+                            } else if (landmarkName === 'right_ankle') {
+                                // Right foot push
+                                y += Math.abs(Math.sin(phase)) * 0.05;
+                            }
+                            break;
+                            
+                        case 'jumping':
+                            // Jumping motion - vertical movement
+                            if (landmarkName.includes('ankle') || landmarkName.includes('knee') || landmarkName.includes('hip')) {
+                                // Lower body jumping
+                                const jumpHeight = Math.abs(Math.sin(phase)) * 0.2;
+                                y -= jumpHeight;
+                            } else if (landmarkName.includes('wrist') || landmarkName.includes('elbow') || landmarkName.includes('shoulder')) {
+                                // Upper body counter movement
+                                const jumpHeight = Math.abs(Math.sin(phase)) * 0.1;
+                                y += jumpHeight;
+                            }
+                            break;
+                            
+                        case 'waving':
+                            // Waving motion - right arm only
+                            if (landmarkName === 'right_wrist') {
+                                // Waving hand
+                                x += Math.sin(phase * 3) * 0.15;
+                                y += Math.cos(phase * 3) * 0.1;
+                            } else if (landmarkName === 'right_elbow') {
+                                // Elbow movement
+                                x += Math.sin(phase * 3) * 0.1;
+                                y += Math.cos(phase * 3) * 0.07;
+                            } else if (landmarkName === 'right_shoulder') {
+                                // Shoulder slight movement
+                                x += Math.sin(phase * 3) * 0.05;
+                                y += Math.cos(phase * 3) * 0.03;
+                            }
+                            break;
+                            
+                        case 'sitting':
+                            // Sitting motion - subtle shifts
+                            if (landmarkName.includes('hip')) {
+                                // Hip shifting
+                                x += Math.sin(phase * 0.5) * 0.02;
+                            } else if (landmarkName.includes('wrist')) {
+                                // Arm movement
+                                x += Math.sin(phase * 0.7) * 0.03;
+                                y += Math.cos(phase * 0.7) * 0.02;
+                            }
+                            break;
+                    }
+                }
+                
+                // Ensure coordinates stay within 0-1 range
+                x = Math.max(0, Math.min(1, x));
+                y = Math.max(0, Math.min(1, y));
+                
+                // Add some random noise for realism
+                x += (Math.random() - 0.5) * 0.005;
+                y += (Math.random() - 0.5) * 0.005;
+                
+                landmarks.push({
+                    x: x,
+                    y: y,
+                    z: z,
+                    visibility: 0.9 + Math.random() * 0.1
+                });
+            }
+            
+            return {
+                timestamp: Date.now(),
+                landmarks: landmarks
+            };
+        }
+
+        // Draw pose on canvas
+        function drawPose(landmarks) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw connections between landmarks
+            const connections = [
+                [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // Arms
+                [11, 23], [12, 24], [23, 24], // Torso
+                [23, 25], [25, 27], [27, 29], [29, 31], // Left leg
+                [24, 26], [26, 28], [28, 30], [30, 32] // Right leg
+            ];
+            
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 2;
+            
+            connections.forEach(([start, end]) => {
+                const startPoint = landmarks[start];
+                const endPoint = landmarks[end];
+                
+                // Convert normalized coordinates to canvas coordinates
+                const startX = startPoint.x * canvas.width;
+                const startY = startPoint.y * canvas.height;
+                const endX = endPoint.x * canvas.width;
+                const endY = endPoint.y * canvas.height;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+            });
+            
+            // Draw landmarks
+            ctx.fillStyle = '#e74c3c';
+            landmarks.forEach(landmark => {
+                // Convert normalized coordinates to canvas coordinates
+                const x = landmark.x * canvas.width;
+                const y = landmark.y * canvas.height;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Send pose data via WebSocket
+        function sendPoseData() {
+            if (!streaming || !websocket) return;
+            
+            const activity = document.getElementById('activity').value;
+            const poseData = generatePoseData(activity, currentFrame);
+            
+            // Draw pose on canvas
+            drawPose(poseData.landmarks);
+            
+            // Send via WebSocket
+            if (websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify(poseData));
+            }
+            
+            currentFrame++;
+        }
+
+        // Start streaming
+        function startStreaming() {
+            const activity = document.getElementById('activity').value;
+            const framerate = parseInt(document.getElementById('framerate').value);
+            
+            // Create WebSocket connection
+            websocket = new WebSocket('wss://climber.dev.maptnh.net:443/ws/pose/');
+            
+            websocket.onopen = function() {
+                streaming = true;
+                currentFrame = 0;
+                
+                document.getElementById('status').textContent = `Connected - Streaming ${activity} at ${framerate}fps`;
+                document.getElementById('status').className = 'status connected';
+                document.getElementById('start-btn').disabled = true;
+                document.getElementById('stop-btn').disabled = false;
+                
+                // Start sending frames
+                frameInterval = setInterval(sendPoseData, 1000 / framerate);
+            };
+            
+            websocket.onclose = function() {
+                streaming = false;
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('start-btn').disabled = false;
+                document.getElementById('stop-btn').disabled = true;
+                
+                if (frameInterval) {
+                    clearInterval(frameInterval);
+                    frameInterval = null;
+                }
+            };
+            
+            websocket.onerror = function(error) {
+                console.error('WebSocket Error:', error);
+                document.getElementById('status').textContent = 'Connection Error';
+                document.getElementById('status').className = 'status disconnected';
+            };
+        }
+
+        // Stop streaming
+        function stopStreaming() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+            
+            if (frameInterval) {
+                clearInterval(frameInterval);
+                frameInterval = null;
+            }
+            
+            streaming = false;
+            currentFrame = 0;
+            
+            document.getElementById('status').textContent = 'Disconnected';
+            document.getElementById('status').className = 'status disconnected';
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = true;
+            
+            // Clear canvas
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        // Update framerate display
+        function updateFramerateDisplay() {
+            const framerate = document.getElementById('framerate').value;
+            document.getElementById('framerate-value').textContent = framerate;
+        }
+
+        // Initialize event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            initCanvas();
+            
+            document.getElementById('start-btn').addEventListener('click', startStreaming);
+            document.getElementById('stop-btn').addEventListener('click', stopStreaming);
+            document.getElementById('framerate').addEventListener('input', updateFramerateDisplay);
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                if (canvas) {
+                    canvas.width = canvas.offsetWidth;
+                    canvas.height = canvas.offsetHeight;
+                }
+            });
         });
-
-        console.log(`Loaded ${paths.size} hold elements.`);
-      } catch (err) {
-        console.error("Failed to load SVG:", err);
-        svgContainer.innerHTML = `<p style='color:red'>Error loading SVG: ${err.message}</p>`;
-      }
-    }
-
-    function connectWebSocket() {
-      const ws = new WebSocket(WS_URL);
-
-      ws.onopen = () => console.log("Connected to", WS_URL);
-      ws.onmessage = event => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data?.session?.holds) updateHolds(data.session.holds);
-        } catch (e) {
-          console.error("Invalid JSON from WS:", e);
-        }
-      };
-
-      ws.onclose = () => {
-        console.warn("WebSocket closed. Reconnecting in 5s...");
-        setTimeout(connectWebSocket, 5000);
-      };
-
-      ws.onerror = err => console.error("WebSocket error:", err);
-    }
-
-    function updateHolds(holds) {
-      holds.forEach(hold => {
-        const el = paths.get(String(hold.id));
-        if (!el) return;
-
-        el.style.animation = "none"; // reset animation
-
-        if (hold.status === "untouched") {
-          el.style.stroke = "#94a3b8";
-          el.style.strokeWidth = "2";
-          el.style.filter = "none";
-          if (!showUntouched) el.classList.add("hidden");
-          else el.classList.remove("hidden");
-        } else if (hold.status === "touched") {
-          el.classList.remove("hidden");
-          el.style.animation = "pulse 1.5s infinite ease-in-out";
-        } else if (hold.status === "completed") {
-          el.classList.remove("hidden");
-          el.style.stroke = "#22c55e";
-          el.style.strokeWidth = "3";
-          el.style.filter = "drop-shadow(0 0 4px #86efac)";
-          console.log(`Hold completed: ID ${hold.id}, Element: ${el.id}`);
-        }
-      });
-    }
-
-    function toggleUntouched(show) {
-      paths.forEach(path => {
-        const isUntouched = path.style.stroke === "rgb(148, 163, 184)" || path.style.stroke === "#94a3b8";
-        if (isUntouched) {
-          if (show) path.classList.remove("hidden");
-          else path.classList.add("hidden");
-        }
-      });
-      console.log(`Untouched holds are now ${show ? "visible" : "hidden"}.`);
-    }
-  </script>
+    </script>
 </body>
 </html>
+</content>
+</edit>
+</tool>
 
-
-
-</div>

@@ -275,6 +275,7 @@ class PoseSkeletonVisualizer {
         this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         
         // Scale landmarks to display size (CSS pixels)
+        // The context is already scaled by device pixel ratio, so we use CSS dimensions
         const scaledLandmarks = this.currentLandmarks.map(landmark => ({
             x: landmark.x * width,
             y: landmark.y * height,
@@ -282,13 +283,30 @@ class PoseSkeletonVisualizer {
             visibility: landmark.visibility || 0
         }));
         
+        // Filter out landmarks that are outside the canvas bounds
+        const visibleLandmarks = scaledLandmarks.filter(landmark => {
+            return landmark.x >= 0 && landmark.x <= width &&
+                   landmark.y >= 0 && landmark.y <= height &&
+                   landmark.visibility > 0.5;
+        });
+        
+        // If no landmarks are visible, return early
+        if (visibleLandmarks.length === 0) {
+            return;
+        }
+        
         // Draw connections
         this.ctx.strokeStyle = 'white';
         this.ctx.lineWidth = 2;
         
         this.poseConnections.forEach(([start, end]) => {
             if (scaledLandmarks[start] && scaledLandmarks[end] &&
-                scaledLandmarks[start].visibility > 0.5 && scaledLandmarks[end].visibility > 0.5) {
+                scaledLandmarks[start].visibility > 0.5 && scaledLandmarks[end].visibility > 0.5 &&
+                // Check if both landmarks are within canvas bounds
+                scaledLandmarks[start].x >= 0 && scaledLandmarks[start].x <= width &&
+                scaledLandmarks[start].y >= 0 && scaledLandmarks[start].y <= height &&
+                scaledLandmarks[end].x >= 0 && scaledLandmarks[end].x <= width &&
+                scaledLandmarks[end].y >= 0 && scaledLandmarks[end].y <= height) {
                 
                 this.ctx.beginPath();
                 this.ctx.moveTo(scaledLandmarks[start].x, scaledLandmarks[start].y);
@@ -299,7 +317,11 @@ class PoseSkeletonVisualizer {
         
         // Draw landmarks
         scaledLandmarks.forEach((landmark, index) => {
-            if (landmark.visibility > 0.5) {
+            if (landmark.visibility > 0.5 &&
+                // Check if landmark is within canvas bounds
+                landmark.x >= 0 && landmark.x <= width &&
+                landmark.y >= 0 && landmark.y <= height) {
+                
                 this.ctx.fillStyle = '#00ff00';
                 this.ctx.beginPath();
                 this.ctx.arc(landmark.x, landmark.y, 5, 0, 2 * Math.PI);

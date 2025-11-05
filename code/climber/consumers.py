@@ -472,3 +472,120 @@ class RelayConsumer(AsyncWebsocketConsumer):
         
         # Send message to WebSocket
         await self.send(text_data=message)
+
+
+
+
+# for debuging, pose from poseconsumer, transformed according to wall calibration
+class TransformedPoseConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_group_name = 'transformed_pose_stream'
+        self.recording_session = None
+        
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+        print("WebSocket connection established.")
+
+    async def disconnect(self, close_code):
+        # Stop any active recording
+        if self.recording_session:
+            await self.stop_recording()
+            
+        # Leave room group
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+        print(f"WebSocket connection closed: {close_code}")
+
+    # Receive message from WebSocket (from the streamer)
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        
+        # Handle recording commands
+        if data.get('type') == 'start_recording_off':
+            await self.start_recording(data)
+        elif data.get('type') == 'stop_recording_off':
+            await self.stop_recording()
+        else:
+            # Regular pose data
+            await self.handle_pose_data(data)
+
+    async def start_recording(self, data):
+        """Start a new recording session"""
+        from django.contrib.auth.models import AnonymousUser
+        
+        # Get user from scope (if authenticated)
+        user = self.scope.get('user')
+        if isinstance(user, AnonymousUser) or not user.is_authenticated:
+            # For now, create a default user or handle anonymous sessions
+            # In production, you'd require authentication
+            from django.contrib.auth.models import User
+            try:
+                user = await database_sync_to_async(User.objects.first)()
+                if not user:
+                    # Create a default user if none exists
+                    user = await database_sync_to_async(User.objects.create)(
+                        username='default_user',
+                        email='default@example.com'
+                    )()
+            except Exception:
+                # If we can't get or create a user, send an error message
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Authentication required for recording'
+                }))
+                return
+        
+        # Create new session recording
+        self.recording_session = await database_sync_to_async(SessionRecording.objects.create)(
+            name=data.get('name', 'Untitled Session'),
+            description=data.get('description', ''),
+            user=user,
+            status='recording'
+        )
+        
+        await self.send(text_data=json.dumps({
+            'type': 'recording_started',
+            'session_id': str(self.recording_session.uuid)
+        }))
+        print(f"Started recording session: {self.recording_session.uuid}")
+
+    async def stop_recording(self):
+        """Stop the current recording session"""
+        if self.recording_session:
+            self.recording_session.status = 'completed'
+            await database_sync_to_async(self.recording_session.save)()
+            
+            session_id = str(self.recording_session.uuid)
+            self.recording_session = None
+            
+            await self.send(text_data=json.dumps({
+                'type': 'recording_stopped',
+                'session_id': session_id
+            }))
+            print(f"Stopped recording session: {session_id}")
+
+    async def handle_pose_data(self, data):
+        """Handle incoming pose data"""
+
+        # Broadcast to all clients
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'pose_message',
+                'message': json.dumps(data)
+            }
+        )
+
+
+    # Receive message from room group (to send to the web client)
+    async def pose_message(self, event):
+        message = event['message']
+
+        # Send message to WebSocket
+        await self.send(text_data=message)

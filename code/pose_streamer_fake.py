@@ -497,6 +497,43 @@ def generate_fake_landmarks(
         p["y"] = -(p["y"] - cy)
         p["z"] = p["z"] - cz
 
+    # Calculate the actual pose bounds
+    min_x = min(p["x"] for p in points if p is not None)
+    max_x = max(p["x"] for p in points if p is not None)
+    min_y = min(p["y"] for p in points if p is not None)
+    max_y = max(p["y"] for p in points if p is not None)
+    
+    # Calculate the range
+    range_x = max_x - min_x
+    range_y = max_y - min_y
+    
+    # For climbing mode, add movement around the canvas
+    if mode == "climb":
+        # Calculate a moving offset that changes slowly over time
+        t = frame_index / 300.0  # Complete a cycle every 5 seconds at 60fps
+        offset_x = 0.15 * math.sin(t)  # Horizontal movement
+        offset_y = 0.1 * math.sin(t * 1.3)  # Vertical movement with different frequency
+    else:
+        offset_x = 0.0
+        offset_y = 0.0
+    
+    # Scale the pose to be about 1/3 of canvas height
+    # We want the pose height to be about 0.33 of the canvas height
+    target_height = 0.33
+    scale_factor = target_height / range_y
+    
+    # Apply scaling and center the pose in the middle portion of the canvas
+    center_x = 0.5 + offset_x  # Center with horizontal offset
+    center_y = 0.5 + offset_y  # Center with vertical offset
+    
+    for p in points:
+        if p is None:
+            continue
+        # Scale the coordinates
+        p["x"] = p["x"] * scale_factor + center_x
+        p["y"] = p["y"] * scale_factor + center_y
+        # Keep z as is (depth information)
+
     # Respect requested landmark count by truncating (kept for compatibility)
     return points[:num_landmarks]
 
@@ -528,10 +565,9 @@ async def stream_fake_pose_landmarks() -> None:
                         if landmarks:
                             out = {
                                 "type": "pose",
-                                "timestamp": 1762281159873,
-                                "width": 640,
-                                "height": 480,
-                                "landmarks":landmarks
+                                "timestamp": int(time.time() * 1000),  # Current timestamp in ms
+                                "frame_number": frame_index,
+                                "landmarks": landmarks
                             }
                             await websocket.send(json.dumps(out))
                     except websockets.exceptions.ConnectionClosed:
@@ -600,7 +636,8 @@ class FakePoseStreamer:
         pose_data = {
             'pose_landmarks': self._convert_to_pose_dict(landmarks),
             'timestamp': time.time(),
-            'frame_number': self.frame_index
+            'frame_number': self.frame_index,
+            'landmarks': landmarks  # Include raw landmarks for compatibility
         }
         
         self.frame_index += 1

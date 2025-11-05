@@ -1,223 +1,316 @@
 #!/usr/bin/env python3
 """
-Test script for the WebSocket pose transformer management command.
-This script creates a simple test setup to verify the transformer functionality.
+Test script for the WebSocket Pose Transformer
+
+This script demonstrates how to use the websocket_pose_transformer.py script
+by creating mock WebSocket servers and clients to test the transformation.
 """
 
 import asyncio
 import json
 import time
 import websockets
-from typing import Dict, Any
-
-# Test configuration
-TEST_CONFIG = {
-    'wall_id': 1,  # Adjust this to match your test wall
-    'input_websocket_url': 'ws://localhost:8765',  # Test input WebSocket
-    'output_websocket_url': 'ws://localhost:8766',  # Test output WebSocket
-    'test_duration': 30,  # Test duration in seconds
-    'pose_interval': 0.5,  # Interval between pose messages in seconds
-}
+import argparse
+from typing import Dict, Any, List
 
 
-class TestPoseSender:
-    """Test client that sends fake pose data"""
+class MockWebSocketServer:
+    """Mock WebSocket server for testing"""
     
-    def __init__(self, url: str):
-        self.url = url
+    def __init__(self, port: int, name: str):
+        self.port = port
+        self.name = name
+        self.clients = set()
+        self.messages = []
+        
+    async def handler(self, websocket, path):
+        """Handle WebSocket connections"""
+        self.clients.add(websocket)
+        print(f"[{self.name}] Client connected to port {self.port}")
+        
+        try:
+            async for message in websocket:
+                data = json.loads(message)
+                self.messages.append(data)
+                print(f"[{self.name}] Received: {data}")
+                
+                # Echo back a confirmation
+                response = {
+                    'type': 'confirmation',
+                    'server': self.name,
+                    'timestamp': time.time(),
+                    'received_at': self.port
+                }
+                await websocket.send(json.dumps(response))
+                
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        finally:
+            self.clients.remove(websocket)
+            print(f"[{self.name}] Client disconnected from port {self.port}")
+    
+    async def start(self):
+        """Start the mock server"""
+        print(f"[{self.name}] Starting server on ws://localhost:{self.port}")
+        return await websockets.serve(self.handler, "localhost", self.port)
+
+
+class MockPoseDataSender:
+    """Mock client that sends pose data to the transformer input"""
+    
+    def __init__(self, websocket_url: str):
+        self.websocket_url = websocket_url
         self.websocket = None
     
     async def connect(self):
-        """Connect to WebSocket"""
-        self.websocket = await websockets.connect(self.url)
-        print(f"Connected to {self.url}")
+        """Connect to the transformer input"""
+        self.websocket = await websockets.connect(self.websocket_url)
+        print(f"[Sender] Connected to {self.websocket_url}")
     
-    async def send_pose_data(self, pose_data: Dict[str, Any]):
-        """Send pose data"""
-        if self.websocket:
-            await self.websocket.send(json.dumps(pose_data))
+    async def send_pose_data(self, frame_id: int):
+        """Send sample pose data"""
+        # Create sample MediaPipe pose landmarks
+        landmarks = []
+        for i in range(33):  # MediaPipe has 33 pose landmarks
+            landmarks.append({
+                'x': 0.3 + (i * 0.01),
+                'y': 0.2 + (i * 0.02),
+                'z': 0.0,
+                'visibility': 0.8 + (i * 0.005)
+            })
+        
+        pose_data = {
+            'type': 'pose_data',
+            'frame_id': frame_id,
+            'timestamp': time.time(),
+            'landmarks': landmarks
+        }
+        
+        await self.websocket.send(json.dumps(pose_data))
+        print(f"[Sender] Sent pose data frame {frame_id}")
     
     async def close(self):
-        """Close connection"""
+        """Close the connection"""
         if self.websocket:
             await self.websocket.close()
 
 
-class TestOutputReceiver:
-    """Test client that receives transformed pose data"""
+class MockTransformedDataReceiver:
+    """Mock client that receives transformed data from the transformer output"""
     
-    def __init__(self, url: str):
-        self.url = url
+    def __init__(self, websocket_url: str):
+        self.websocket_url = websocket_url
         self.websocket = None
         self.received_messages = []
     
     async def connect(self):
-        """Connect to WebSocket"""
-        self.websocket = await websockets.connect(self.url)
-        print(f"Connected to {self.url}")
+        """Connect to the transformer output"""
+        self.websocket = await websockets.connect(self.websocket_url)
+        print(f"[Receiver] Connected to {self.websocket_url}")
     
-    async def listen_for_messages(self):
-        """Listen for incoming messages"""
+    async def listen(self, max_messages: int = 10):
+        """Listen for transformed messages"""
+        count = 0
         try:
             async for message in self.websocket:
                 data = json.loads(message)
                 self.received_messages.append(data)
-                print(f"Received transformed pose data: {data}")
+                count += 1
+                
+                print(f"[Receiver] Received transformed message {count}:")
+                print(f"  Type: {data.get('type', 'unknown')}")
+                print(f"  Transformed: {data.get('_transformed', False)}")
+                print(f"  Message count: {data.get('_message_count', 0)}")
+                
+                if 'landmarks' in data:
+                    print(f"  Landmarks: {len(data['landmarks'])}")
+                    # Show first landmark as example
+                    if data['landmarks']:
+                        first = data['landmarks'][0]
+                        print(f"  First landmark: x={first.get('x', 0):.3f}, y={first.get('y', 0):.3f}")
+                
+                if count >= max_messages:
+                    break
+                    
         except websockets.exceptions.ConnectionClosed:
-            print("Output WebSocket connection closed")
+            print("[Receiver] Connection closed")
     
     async def close(self):
-        """Close connection"""
+        """Close the connection"""
         if self.websocket:
             await self.websocket.close()
 
 
-def create_fake_pose_data(frame_id: int) -> Dict[str, Any]:
-    """Create fake pose data for testing"""
-    # Create 33 MediaPipe pose landmarks with normalized coordinates
-    landmarks = []
-    for i in range(33):
-        # Create some simple movement patterns
-        x = 0.5 + 0.3 * (i % 3 - 1) * (0.9 + 0.1 * (frame_id % 10) / 10)
-        y = 0.3 + 0.6 * (i / 33) + 0.1 * (frame_id % 20) / 20
-        z = 0.0
-        visibility = 0.9 if i in [15, 16, 17, 18, 19, 20, 21, 22] else 0.7  # Higher visibility for hands
-        
-        landmarks.append({
-            'x': x,
-            'y': y,
-            'z': z,
-            'visibility': visibility
-        })
+async def run_test(use_example_transform: bool = False):
+    """Run the test scenario"""
+    print("WebSocket Pose Transformer Test")
+    print("=" * 50)
     
-    return {
-        'landmarks': landmarks,
-        'timestamp': time.time(),
-        'frame_id': frame_id
-    }
-
-
-async def run_test():
-    """Run the test"""
-    print("Starting WebSocket pose transformer test...")
+    # Configuration
+    input_port = 8765
+    output_port = 8766
     
-    # Create test clients
-    pose_sender = TestPoseSender(TEST_CONFIG['input_websocket_url'])
-    output_receiver = TestOutputReceiver(TEST_CONFIG['output_websocket_url'])
+    input_url = f"ws://localhost:{input_port}"
+    output_url = f"ws://localhost:{output_port}"
+    
+    # Create mock servers
+    input_server = MockWebSocketServer(input_port, "InputServer")
+    output_server = MockWebSocketServer(output_port, "OutputServer")
+    
+    # Start servers
+    await input_server.start()
+    await output_server.start()
+    
+    # Give servers time to start
+    await asyncio.sleep(1)
+    
+    # Start the transformer in a separate task
+    transformer_args = [
+        "python", "websocket_pose_transformer.py",
+        "--input-url", input_url,
+        "--output-url", output_url,
+        "--debug"
+    ]
+    
+    if use_example_transform:
+        transformer_args.append("--use-example-transform")
+    
+    print(f"\nStarting transformer with command: {' '.join(transformer_args)}")
+    
+    # Create transformer process
+    import subprocess
+    transformer_process = subprocess.Popen(
+        transformer_args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    # Give transformer time to connect
+    await asyncio.sleep(3)
     
     try:
-        # Connect to WebSockets
-        await pose_sender.connect()
-        await output_receiver.connect()
+        # Create test clients
+        sender = MockPoseDataSender(input_url)
+        receiver = MockTransformedDataReceiver(output_url)
         
-        # Start listening for output messages
-        listen_task = asyncio.create_task(output_receiver.listen_for_messages())
+        # Connect clients
+        await sender.connect()
+        await receiver.connect()
         
-        # Send pose data for the test duration
-        start_time = time.time()
-        frame_id = 0
+        # Start listening in background
+        listen_task = asyncio.create_task(receiver.listen(5))
         
-        while time.time() - start_time < TEST_CONFIG['test_duration']:
-            pose_data = create_fake_pose_data(frame_id)
-            await pose_sender.send_pose_data(pose_data)
-            
-            frame_id += 1
-            await asyncio.sleep(TEST_CONFIG['pose_interval'])
+        # Send some test data
+        print("\nSending test pose data...")
+        for frame_id in range(5):
+            await sender.send_pose_data(frame_id)
+            await asyncio.sleep(0.5)
         
-        # Wait a bit for any remaining messages
-        await asyncio.sleep(2)
+        # Wait for all messages to be processed
+        await listen_task
         
-        # Stop listening
-        listen_task.cancel()
-        
-        # Print test results
+        # Print summary
         print(f"\nTest completed!")
-        print(f"Sent {frame_id} pose messages")
-        print(f"Received {len(output_receiver.received_messages)} transformed pose messages")
+        print(f"Sent 5 pose frames")
+        print(f"Received {len(receiver.received_messages)} transformed messages")
         
-        if output_receiver.received_messages:
-            print("\nSample received message:")
-            sample_msg = output_receiver.received_messages[0]
-            print(f"  Type: {sample_msg.get('type')}")
-            print(f"  Wall ID: {sample_msg.get('wall_id')}")
-            print(f"  Original landmark count: {sample_msg.get('original_landmark_count')}")
-            print(f"  Transformed landmark count: {sample_msg.get('transformed_landmark_count')}")
+        # Show transformation details
+        if receiver.received_messages:
+            msg = receiver.received_messages[0]
+            print(f"\nTransformation details:")
+            print(f"  Transform function used: {'example' if use_example_transform else 'dummy'}")
+            print(f"  Message includes _transformed: {msg.get('_transformed', False)}")
+            print(f"  Message includes _transform_timestamp: {'_transform_timestamp' in msg}")
             
-            if sample_msg.get('landmarks'):
-                print(f"  Sample transformed landmark: {sample_msg['landmarks'][0]}")
+            if 'landmarks' in msg and msg['landmarks']:
+                landmark = msg['landmarks'][0]
+                print(f"  Sample landmark transformations:")
+                for key, value in landmark.items():
+                    if key.startswith(('dummy_', 'transformed_', 'x', 'y', 'z')):
+                        print(f"    {key}: {value}")
         
     except Exception as e:
         print(f"Test error: {e}")
     finally:
         # Clean up
-        await pose_sender.close()
-        await output_receiver.close()
+        await sender.close()
+        await receiver.close()
+        
+        # Stop transformer
+        transformer_process.terminate()
+        transformer_process.wait()
+        
+        print("\nTest completed successfully!")
 
 
-async def start_test_servers():
-    """Start simple test WebSocket servers"""
-    print("Starting test WebSocket servers...")
+async def run_simple_test():
+    """Run a simpler test without the transformer process"""
+    print("Simple WebSocket Connection Test")
+    print("=" * 40)
     
-    async def handle_input(websocket, path):
-        """Handle input WebSocket connections"""
-        print(f"Input client connected: {websocket.remote_address}")
-        try:
-            async for message in websocket:
-                # Just echo back for testing
-                await websocket.send(f"Received: {message}")
-        except websockets.exceptions.ConnectionClosed:
-            print("Input client disconnected")
+    # Configuration
+    input_port = 8765
+    output_port = 8766
     
-    async def handle_output(websocket, path):
-        """Handle output WebSocket connections"""
-        print(f"Output client connected: {websocket.remote_address}")
-        try:
-            # Keep connection open
-            await websocket.wait_closed()
-        except websockets.exceptions.ConnectionClosed:
-            print("Output client disconnected")
+    input_url = f"ws://localhost:{input_port}"
+    output_url = f"ws://localhost:{output_port}"
+    
+    # Create mock servers
+    input_server = MockWebSocketServer(input_port, "InputServer")
+    output_server = MockWebSocketServer(output_port, "OutputServer")
     
     # Start servers
-    input_server = await websockets.serve(handle_input, "localhost", 8765)
-    output_server = await websockets.serve(handle_output, "localhost", 8766)
+    await input_server.start()
+    await output_server.start()
     
-    print("Test servers started on ports 8765 (input) and 8766 (output)")
-    
-    return input_server, output_server
-
-
-async def main():
-    """Main test function"""
-    # Start test servers
-    input_server, output_server = await start_test_servers()
+    # Give servers time to start
+    await asyncio.sleep(1)
     
     try:
-        # Wait a moment for servers to start
-        await asyncio.sleep(1)
+        # Test direct connection to servers
+        print("Testing direct connection to input server...")
+        sender = MockPoseDataSender(input_url)
+        await sender.connect()
+        await sender.send_pose_data(1)
+        await sender.close()
         
-        # Run the test
-        await run_test()
-    finally:
-        # Close servers
-        input_server.close()
-        output_server.close()
-        await input_server.wait_closed()
-        await output_server.wait_closed()
-        print("Test servers closed")
+        print("Testing direct connection to output server...")
+        receiver = MockTransformedDataReceiver(output_url)
+        await receiver.connect()
+        await receiver.close()
+        
+        print("\nDirect connection test successful!")
+        print(f"Input server received {len(input_server.messages)} messages")
+        print(f"Output server received {len(output_server.messages)} messages")
+        
+    except Exception as e:
+        print(f"Test error: {e}")
+    
+    print("\nSimple test completed!")
+
+
+def main():
+    """Main entry point"""
+    parser = argparse.ArgumentParser(description='Test WebSocket Pose Transformer')
+    parser.add_argument(
+        '--simple',
+        action='store_true',
+        help='Run simple connection test only'
+    )
+    parser.add_argument(
+        '--example-transform',
+        action='store_true',
+        help='Test with example transform function'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.simple:
+        asyncio.run(run_simple_test())
+    else:
+        asyncio.run(run_test(use_example_transform=args.example_transform))
 
 
 if __name__ == "__main__":
-    print("WebSocket Pose Transformer Test")
-    print("=" * 40)
-    print("This test will:")
-    print("1. Start test WebSocket servers")
-    print("2. Send fake pose data to input server")
-    print("3. Verify the transformer processes the data")
-    print("4. Check output for transformed coordinates")
-    print()
-    print("To test with the actual transformer:")
-    print("1. Start the transformer: uv run python manage.py websocket_pose_transformer --wall-id 1 --input-websocket-url ws://localhost:8765 --output-websocket-url ws://localhost:8766")
-    print("2. Run this test script")
-    print()
-    
-    asyncio.run(main())
+    main()

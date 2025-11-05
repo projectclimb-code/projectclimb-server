@@ -1,0 +1,1125 @@
+{% extends "base.html" %}
+
+{% block title %}Dual Pose Skeleton Visualization{% endblock title %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Dual Pose Skeleton Visualization</h1>
+    
+    <!-- View Mode Controls -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">View Mode</h2>
+        <div class="flex flex-wrap gap-4">
+            <button id="view-side-by-side" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                Side by Side
+            </button>
+            <button id="view-combined" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                Combined View
+            </button>
+            <button id="fullscreen-left" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                Fullscreen Left
+            </button>
+            <button id="fullscreen-right" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
+                Fullscreen Right
+            </button>
+        </div>
+    </div>
+    
+    <!-- Connection Settings for Both WebSockets -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Connection Settings</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Left WebSocket Settings -->
+            <div class="border-r border-gray-200 pr-6">
+                <h3 class="text-lg font-medium mb-3 text-gray-700">Left Visualization (Blue)</h3>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <span class="text-gray-700 mr-2">WebSocket URL:</span>
+                        <input type="text" id="websocket-url-left" value="{{ websocket_url }}" 
+                               class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-80">
+                    </label>
+                    <button id="connect-btn-left" 
+                            class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        Connect
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Right WebSocket Settings -->
+            <div class="pl-6">
+                <h3 class="text-lg font-medium mb-3 text-gray-700">Right Visualization (Green)</h3>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <span class="text-gray-700 mr-2">WebSocket URL:</span>
+                        <input type="text" id="websocket-url-right" value="{{ websocket_url }}" 
+                               class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-80">
+                    </label>
+                    <button id="connect-btn-right" 
+                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
+                        Connect
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Side-by-Side Visualizations -->
+    <div id="side-by-side-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Left Visualization -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-700">Left Pose Visualization</h2>
+                <div class="flex items-center space-x-2">
+                    <div id="status-indicator-left" class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span id="status-text-left" class="text-gray-600">Disconnected</span>
+                </div>
+            </div>
+            
+            <div class="relative bg-black rounded-lg" style="height: 500px;">
+                <canvas id="pose-canvas-left" class="w-full h-full rounded-lg"></canvas>
+                
+                <!-- Controls overlay -->
+                <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
+                    <div class="text-white text-sm mb-2">
+                        <div>FPS: <span id="fps-counter-left">0</span></div>
+                        <div>Landmarks: <span id="landmark-count-left">0</span></div>
+                    </div>
+                </div>
+                
+                <!-- Pose info overlay -->
+                <div id="pose-info-left" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg text-white text-sm hidden">
+                    <div class="font-semibold mb-1">Pose Data</div>
+                    <div id="pose-details-left"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Visualization -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-700">Right Pose Visualization</h2>
+                <div class="flex items-center space-x-2">
+                    <div id="status-indicator-right" class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span id="status-text-right" class="text-gray-600">Disconnected</span>
+                </div>
+            </div>
+            
+            <div class="relative bg-black rounded-lg" style="height: 500px;">
+                <canvas id="pose-canvas-right" class="w-full h-full rounded-lg"></canvas>
+                
+                <!-- Controls overlay -->
+                <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
+                    <div class="text-white text-sm mb-2">
+                        <div>FPS: <span id="fps-counter-right">0</span></div>
+                        <div>Landmarks: <span id="landmark-count-right">0</span></div>
+                    </div>
+                </div>
+                
+                <!-- Pose info overlay -->
+                <div id="pose-info-right" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg text-white text-sm hidden">
+                    <div class="font-semibold mb-1">Pose Data</div>
+                    <div id="pose-details-right"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Combined Visualization (Initially Hidden) -->
+    <div id="combined-container" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-700">Combined Pose Visualization</h2>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                    <span class="text-gray-600 text-sm">Left</span>
+                    <div id="status-indicator-left-combined" class="w-3 h-3 rounded-full bg-red-500 ml-2"></div>
+                    <span id="status-text-left-combined" class="text-gray-600 text-sm">Disconnected</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span class="text-gray-600 text-sm">Right</span>
+                    <div id="status-indicator-right-combined" class="w-3 h-3 rounded-full bg-red-500 ml-2"></div>
+                    <span id="status-text-right-combined" class="text-gray-600 text-sm">Disconnected</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="relative bg-black rounded-lg" style="height: 600px;">
+            <canvas id="pose-canvas-combined" class="w-full h-full rounded-lg"></canvas>
+            
+            <!-- Controls overlay -->
+            <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
+                <div class="text-white text-sm mb-2">
+                    <div>Left FPS: <span id="fps-counter-left-combined">0</span></div>
+                    <div>Left Landmarks: <span id="landmark-count-left-combined">0</span></div>
+                    <div>Right FPS: <span id="fps-counter-right-combined">0</span></div>
+                    <div>Right Landmarks: <span id="landmark-count-right-combined">0</span></div>
+                </div>
+            </div>
+            
+            <!-- Pose info overlay -->
+            <div id="pose-info-combined" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg text-white text-sm hidden">
+                <div class="font-semibold mb-1">Pose Data</div>
+                <div id="pose-details-combined"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Left Visualization (Initially Hidden) -->
+    <div id="fullscreen-left-container" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-700">Left Pose Visualization (Fullscreen)</h2>
+            <div class="flex items-center space-x-2">
+                <div id="status-indicator-left-fullscreen" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="status-text-left-fullscreen" class="text-gray-600">Disconnected</span>
+                <button id="exit-fullscreen-left" class="px-3 py-1 bg-gray-500 text-white rounded-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm">
+                    Exit Fullscreen
+                </button>
+            </div>
+        </div>
+        
+        <div class="relative bg-black rounded-lg" style="height: 70vh;">
+            <canvas id="pose-canvas-left-fullscreen" class="w-full h-full rounded-lg"></canvas>
+            
+            <!-- Controls overlay -->
+            <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
+                <div class="text-white text-sm mb-2">
+                    <div>FPS: <span id="fps-counter-left-fullscreen">0</span></div>
+                    <div>Landmarks: <span id="landmark-count-left-fullscreen">0</span></div>
+                </div>
+            </div>
+            
+            <!-- Pose info overlay -->
+            <div id="pose-info-left-fullscreen" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg text-white text-sm hidden">
+                <div class="font-semibold mb-1">Pose Data</div>
+                <div id="pose-details-left-fullscreen"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Right Visualization (Initially Hidden) -->
+    <div id="fullscreen-right-container" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-700">Right Pose Visualization (Fullscreen)</h2>
+            <div class="flex items-center space-x-2">
+                <div id="status-indicator-right-fullscreen" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="status-text-right-fullscreen" class="text-gray-600">Disconnected</span>
+                <button id="exit-fullscreen-right" class="px-3 py-1 bg-gray-500 text-white rounded-lg hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm">
+                    Exit Fullscreen
+                </button>
+            </div>
+        </div>
+        
+        <div class="relative bg-black rounded-lg" style="height: 70vh;">
+            <canvas id="pose-canvas-right-fullscreen" class="w-full h-full rounded-lg"></canvas>
+            
+            <!-- Controls overlay -->
+            <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
+                <div class="text-white text-sm mb-2">
+                    <div>FPS: <span id="fps-counter-right-fullscreen">0</span></div>
+                    <div>Landmarks: <span id="landmark-count-right-fullscreen">0</span></div>
+                </div>
+            </div>
+            
+            <!-- Pose info overlay -->
+            <div id="pose-info-right-fullscreen" class="absolute top-4 right-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg text-white text-sm hidden">
+                <div class="font-semibold mb-1">Pose Data</div>
+                <div id="pose-details-right-fullscreen"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Instructions</h2>
+        <div class="text-gray-600 space-y-2">
+            <p>1. Connect to two WebSockets that stream MediaPipe pose data in JSON format.</p>
+            <p>2. The expected format is:</p>
+            <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+{
+  "landmarks": [
+    {"x": 0.5, "y": 0.3, "z": 0.0, "visibility": 0.9},
+    ...
+  ],
+  "frame_number": 123,
+  "timestamp": 1234567890
+}
+            </pre>
+            <p>3. Choose your view mode:</p>
+            <ul class="list-disc pl-6 space-y-1">
+                <li><strong>Side by Side:</strong> View both poses in separate canvases</li>
+                <li><strong>Combined View:</strong> View both poses overlaid on a single canvas (left pose in blue, right pose in green)</li>
+                <li><strong>Fullscreen:</strong> View a single pose in fullscreen mode</li>
+            </ul>
+            <p>4. In combined view, left pose is rendered in blue and right pose in green for easy differentiation.</p>
+        </div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+class PoseSkeletonVisualizer {
+    constructor(side) {
+        this.side = side; // 'left' or 'right'
+        this.canvas = document.getElementById(`pose-canvas-${side}`);
+        this.ctx = this.canvas.getContext('2d');
+        this.socket = null;
+        this.isConnected = false;
+        this.lastFrameTime = 0;
+        this.frameCount = 0;
+        this.fps = 0;
+        this.currentLandmarks = null;
+        
+        // MediaPipe Pose connections
+        this.poseConnections = [
+            [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
+            [9, 10], [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+            [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [11, 23], [12, 24],
+            [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30],
+            [29, 31], [30, 32], [27, 31], [28, 32]
+        ];
+        
+        // Color scheme for this side
+        this.colors = {
+            left: {
+                landmark: '#00aaff',  // Blue
+                connection: '#66ccff'  // Light blue
+            },
+            right: {
+                landmark: '#00ff00',  // Green
+                connection: '#66ff66'  // Light green
+            }
+        };
+        
+        this.setupCanvas();
+        this.loadSavedUrl();
+        this.setupEventListeners();
+        this.animate();
+    }
+    
+    setupCanvas() {
+        const resizeCanvas = () => {
+            const container = this.canvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            
+            // Set canvas display size (CSS pixels)
+            this.canvas.style.width = '100%';
+            this.canvas.style.height = '100%';
+            
+            // Set canvas actual size in memory (scaled for retina displays)
+            const dpr = window.devicePixelRatio || 1;
+            this.canvas.width = rect.width * dpr;
+            this.canvas.height = rect.height * dpr;
+            
+            // Scale the drawing context to match the device pixel ratio
+            this.ctx.scale(dpr, dpr);
+        };
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+    }
+    
+    loadSavedUrl() {
+        const wsUrlInput = document.getElementById(`websocket-url-${this.side}`);
+        const savedUrl = localStorage.getItem(`pose-skeleton-dual-${this.side}-url`);
+        
+        if (savedUrl) {
+            wsUrlInput.value = savedUrl;
+        }
+    }
+    
+    saveUrl(url) {
+        localStorage.setItem(`pose-skeleton-dual-${this.side}-url`, url);
+    }
+    
+    setupEventListeners() {
+        const connectBtn = document.getElementById(`connect-btn-${this.side}`);
+        const wsUrlInput = document.getElementById(`websocket-url-${this.side}`);
+        
+        // Save URL to localStorage when it changes
+        wsUrlInput.addEventListener('input', () => {
+            this.saveUrl(wsUrlInput.value);
+        });
+        
+        connectBtn.addEventListener('click', () => {
+            if (this.isConnected) {
+                this.disconnect();
+            } else {
+                this.saveUrl(wsUrlInput.value); // Save URL before connecting
+                this.connect(wsUrlInput.value);
+            }
+        });
+        
+        wsUrlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (this.isConnected) {
+                    this.disconnect();
+                } else {
+                    this.saveUrl(wsUrlInput.value); // Save URL before connecting
+                    this.connect(wsUrlInput.value);
+                }
+            }
+        });
+    }
+    
+    connect(url) {
+        try {
+            this.socket = new WebSocket(url);
+            this.updateStatus('connecting');
+            
+            this.socket.onopen = () => {
+                this.isConnected = true;
+                this.updateStatus('connected');
+                const connectBtn = document.getElementById(`connect-btn-${this.side}`);
+                connectBtn.textContent = 'Disconnect';
+                
+                // Update button styling based on side
+                if (this.side === 'left') {
+                    connectBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                    connectBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                } else {
+                    connectBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                    connectBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                }
+                
+                console.log(`${this.side} WebSocket connected`);
+            };
+            
+            this.socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handlePoseData(data);
+                } catch (error) {
+                    console.error(`Error parsing ${this.side} WebSocket message:`, error);
+                }
+            };
+            
+            this.socket.onclose = () => {
+                this.isConnected = false;
+                this.updateStatus('disconnected');
+                const connectBtn = document.getElementById(`connect-btn-${this.side}`);
+                connectBtn.textContent = 'Connect';
+                
+                // Update button styling based on side
+                if (this.side === 'left') {
+                    connectBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    connectBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                } else {
+                    connectBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    connectBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                }
+                
+                console.log(`${this.side} WebSocket disconnected`);
+            };
+            
+            this.socket.onerror = (error) => {
+                console.error(`${this.side} WebSocket error:`, error);
+                this.updateStatus('error');
+            };
+            
+        } catch (error) {
+            console.error(`Error creating ${this.side} WebSocket connection:`, error);
+            this.updateStatus('error');
+        }
+    }
+    
+    disconnect() {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+    }
+    
+    updateStatus(status) {
+        // Update all status indicators for this side
+        const indicators = [
+            `status-indicator-${this.side}`,
+            `status-indicator-${this.side}-combined`,
+            `status-indicator-${this.side}-fullscreen`
+        ];
+        
+        const texts = [
+            `status-text-${this.side}`,
+            `status-text-${this.side}-combined`,
+            `status-text-${this.side}-fullscreen`
+        ];
+        
+        indicators.forEach(id => {
+            const indicator = document.getElementById(id);
+            if (indicator) {
+                indicator.classList.remove('bg-red-500', 'bg-yellow-500', 'bg-green-500');
+                
+                switch (status) {
+                    case 'connecting':
+                        indicator.classList.add('bg-yellow-500');
+                        break;
+                    case 'connected':
+                        indicator.classList.add('bg-green-500');
+                        break;
+                    case 'disconnected':
+                    case 'error':
+                        indicator.classList.add('bg-red-500');
+                        break;
+                }
+            }
+        });
+        
+        texts.forEach(id => {
+            const text = document.getElementById(id);
+            if (text) {
+                switch (status) {
+                    case 'connecting':
+                        text.textContent = 'Connecting...';
+                        break;
+                    case 'connected':
+                        text.textContent = 'Connected';
+                        break;
+                    case 'disconnected':
+                        text.textContent = 'Disconnected';
+                        break;
+                    case 'error':
+                        text.textContent = 'Connection Error';
+                        break;
+                }
+            }
+        });
+    }
+    
+    handlePoseData(data) {
+        if (data.landmarks && Array.isArray(data.landmarks)) {
+            this.currentLandmarks = data.landmarks;
+            this.updateStats(data.landmarks.length);
+            this.updatePoseInfo(data);
+        }
+    }
+    
+    updateStats(landmarkCount) {
+        // Update all counters for this side
+        const counters = [
+            `landmark-count-${this.side}`,
+            `landmark-count-${this.side}-combined`,
+            `landmark-count-${this.side}-fullscreen`
+        ];
+        
+        counters.forEach(id => {
+            const counter = document.getElementById(id);
+            if (counter) {
+                counter.textContent = landmarkCount;
+            }
+        });
+        
+        // Calculate FPS
+        this.frameCount++;
+        const currentTime = performance.now();
+        if (currentTime - this.lastFrameTime >= 1000) {
+            this.fps = Math.round(this.frameCount * 1000 / (currentTime - this.lastFrameTime));
+            
+            const fpsCounters = [
+                `fps-counter-${this.side}`,
+                `fps-counter-${this.side}-combined`,
+                `fps-counter-${this.side}-fullscreen`
+            ];
+            
+            fpsCounters.forEach(id => {
+                const counter = document.getElementById(id);
+                if (counter) {
+                    counter.textContent = this.fps;
+                }
+            });
+            
+            this.frameCount = 0;
+            this.lastFrameTime = currentTime;
+        }
+    }
+    
+    updatePoseInfo(data) {
+        // Update all pose info for this side
+        const infoDivs = [
+            `pose-info-${this.side}`,
+            `pose-info-${this.side}-fullscreen`
+        ];
+        
+        const detailsDivs = [
+            `pose-details-${this.side}`,
+            `pose-details-${this.side}-fullscreen`
+        ];
+        
+        infoDivs.forEach((id, index) => {
+            const infoDiv = document.getElementById(id);
+            const detailsDiv = document.getElementById(detailsDivs[index]);
+            
+            if (infoDiv && detailsDiv) {
+                if (data.landmarks && data.landmarks.length > 0) {
+                    infoDiv.classList.remove('hidden');
+                    detailsDiv.innerHTML = `
+                        <div>Frame: ${data.frame_number || 'N/A'}</div>
+                        <div>Timestamp: ${data.timestamp || 'N/A'}</div>
+                        <div>Visible landmarks: ${data.landmarks.filter(l => l.visibility > 0.5).length}</div>
+                    `;
+                } else {
+                    infoDiv.classList.add('hidden');
+                }
+            }
+        });
+    }
+    
+    drawPose() {
+        if (!this.currentLandmarks || this.currentLandmarks.length === 0) {
+            return;
+        }
+        
+        // Get the display dimensions (CSS pixels)
+        const container = this.canvas.parentElement;
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        
+        // Get the actual canvas dimensions (including device pixel ratio)
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+        
+        // Clear canvas using actual canvas dimensions
+        this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Scale landmarks to display size (CSS pixels)
+        // The context is already scaled by device pixel ratio, so we use CSS dimensions
+        const scaledLandmarks = this.currentLandmarks.map(landmark => ({
+            x: landmark.x * width,
+            y: landmark.y * height,
+            z: landmark.z || 0,
+            visibility: landmark.visibility || 0
+        }));
+        
+        // Filter out landmarks that are outside the canvas bounds
+        const visibleLandmarks = scaledLandmarks.filter(landmark => {
+            return landmark.x >= 0 && landmark.x <= width &&
+                   landmark.y >= 0 && landmark.y <= height &&
+                   landmark.visibility > 0.5;
+        });
+        
+        // If no landmarks are visible, return early
+        if (visibleLandmarks.length === 0) {
+            return;
+        }
+        
+        // Get colors for this side
+        const colors = this.colors[this.side];
+        
+        // Draw connections
+        this.ctx.strokeStyle = colors.connection;
+        this.ctx.lineWidth = 2;
+        
+        this.poseConnections.forEach(([start, end]) => {
+            if (scaledLandmarks[start] && scaledLandmarks[end] &&
+                scaledLandmarks[start].visibility > 0.5 && scaledLandmarks[end].visibility > 0.5 &&
+                // Check if both landmarks are within canvas bounds
+                scaledLandmarks[start].x >= 0 && scaledLandmarks[start].x <= width &&
+                scaledLandmarks[start].y >= 0 && scaledLandmarks[start].y <= height &&
+                scaledLandmarks[end].x >= 0 && scaledLandmarks[end].x <= width &&
+                scaledLandmarks[end].y >= 0 && scaledLandmarks[end].y <= height) {
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(scaledLandmarks[start].x, scaledLandmarks[start].y);
+                this.ctx.lineTo(scaledLandmarks[end].x, scaledLandmarks[end].y);
+                this.ctx.stroke();
+            }
+        });
+        
+        // Draw landmarks
+        scaledLandmarks.forEach((landmark, index) => {
+            if (landmark.visibility > 0.5 &&
+                // Check if landmark is within canvas bounds
+                landmark.x >= 0 && landmark.x <= width &&
+                landmark.y >= 0 && landmark.y <= height) {
+                
+                this.ctx.fillStyle = colors.landmark;
+                this.ctx.beginPath();
+                this.ctx.arc(landmark.x, landmark.y, 5, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Add landmark index for debugging
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '10px Arial';
+                this.ctx.fillText(index.toString(), landmark.x + 8, landmark.y - 8);
+            }
+        });
+    }
+    
+    animate() {
+        this.drawPose();
+        requestAnimationFrame(() => this.animate());
+    }
+}
+
+class CombinedPoseVisualizer {
+    constructor(leftVisualizer, rightVisualizer) {
+        this.canvas = document.getElementById('pose-canvas-combined');
+        this.ctx = this.canvas.getContext('2d');
+        this.leftVisualizer = leftVisualizer;
+        this.rightVisualizer = rightVisualizer;
+        
+        // MediaPipe Pose connections
+        this.poseConnections = [
+            [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
+            [9, 10], [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+            [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [11, 23], [12, 24],
+            [23, 24], [23, 25], [24, 26], [25, 27], [26, 28], [27, 29], [28, 30],
+            [29, 31], [30, 32], [27, 31], [28, 32]
+        ];
+        
+        this.setupCanvas();
+        this.animate();
+    }
+    
+    setupCanvas() {
+        const resizeCanvas = () => {
+            const container = this.canvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            
+            // Set canvas display size (CSS pixels)
+            this.canvas.style.width = '100%';
+            this.canvas.style.height = '100%';
+            
+            // Set canvas actual size in memory (scaled for retina displays)
+            const dpr = window.devicePixelRatio || 1;
+            this.canvas.width = rect.width * dpr;
+            this.canvas.height = rect.height * dpr;
+            
+            // Scale the drawing context to match the device pixel ratio
+            this.ctx.scale(dpr, dpr);
+        };
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+    }
+    
+    drawPose(landmarks, side) {
+        if (!landmarks || landmarks.length === 0) {
+            return;
+        }
+        
+        // Get the display dimensions (CSS pixels)
+        const container = this.canvas.parentElement;
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        
+        // Scale landmarks to display size (CSS pixels)
+        // The context is already scaled by device pixel ratio, so we use CSS dimensions
+        const scaledLandmarks = landmarks.map(landmark => ({
+            x: landmark.x * width,
+            y: landmark.y * height,
+            z: landmark.z || 0,
+            visibility: landmark.visibility || 0
+        }));
+        
+        // Filter out landmarks that are outside the canvas bounds
+        const visibleLandmarks = scaledLandmarks.filter(landmark => {
+            return landmark.x >= 0 && landmark.x <= width &&
+                   landmark.y >= 0 && landmark.y <= height &&
+                   landmark.visibility > 0.5;
+        });
+        
+        // If no landmarks are visible, return early
+        if (visibleLandmarks.length === 0) {
+            return;
+        }
+        
+        // Get colors for this side
+        const colors = side === 'left' ? 
+            { landmark: '#00aaff', connection: '#66ccff' } :  // Blue
+            { landmark: '#00ff00', connection: '#66ff66' };   // Green
+        
+        // Draw connections
+        this.ctx.strokeStyle = colors.connection;
+        this.ctx.lineWidth = 2;
+        
+        this.poseConnections.forEach(([start, end]) => {
+            if (scaledLandmarks[start] && scaledLandmarks[end] &&
+                scaledLandmarks[start].visibility > 0.5 && scaledLandmarks[end].visibility > 0.5 &&
+                // Check if both landmarks are within canvas bounds
+                scaledLandmarks[start].x >= 0 && scaledLandmarks[start].x <= width &&
+                scaledLandmarks[start].y >= 0 && scaledLandmarks[start].y <= height &&
+                scaledLandmarks[end].x >= 0 && scaledLandmarks[end].x <= width &&
+                scaledLandmarks[end].y >= 0 && scaledLandmarks[end].y <= height) {
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(scaledLandmarks[start].x, scaledLandmarks[start].y);
+                this.ctx.lineTo(scaledLandmarks[end].x, scaledLandmarks[end].y);
+                this.ctx.stroke();
+            }
+        });
+        
+        // Draw landmarks
+        scaledLandmarks.forEach((landmark, index) => {
+            if (landmark.visibility > 0.5 &&
+                // Check if landmark is within canvas bounds
+                landmark.x >= 0 && landmark.x <= width &&
+                landmark.y >= 0 && landmark.y <= height) {
+                
+                this.ctx.fillStyle = colors.landmark;
+                this.ctx.beginPath();
+                this.ctx.arc(landmark.x, landmark.y, 5, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Add landmark index for debugging
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '10px Arial';
+                this.ctx.fillText(index.toString(), landmark.x + 8, landmark.y - 8);
+            }
+        });
+    }
+    
+    animate() {
+        // Clear canvas
+        const container = this.canvas.parentElement;
+        const rect = container.getBoundingClientRect();
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+        
+        this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Draw left pose (blue)
+        if (this.leftVisualizer.currentLandmarks) {
+            this.drawPose(this.leftVisualizer.currentLandmarks, 'left');
+        }
+        
+        // Draw right pose (green)
+        if (this.rightVisualizer.currentLandmarks) {
+            this.drawPose(this.rightVisualizer.currentLandmarks, 'right');
+        }
+        
+        requestAnimationFrame(() => this.animate());
+    }
+}
+
+class ViewModeManager {
+    constructor(leftVisualizer, rightVisualizer) {
+        this.leftVisualizer = leftVisualizer;
+        this.rightVisualizer = rightVisualizer;
+        this.combinedVisualizer = null;
+        this.currentMode = 'side-by-side';
+        
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        // View mode buttons
+        document.getElementById('view-side-by-side').addEventListener('click', () => {
+            this.showSideBySide();
+        });
+        
+        document.getElementById('view-combined').addEventListener('click', () => {
+            this.showCombined();
+        });
+        
+        document.getElementById('fullscreen-left').addEventListener('click', () => {
+            this.showFullscreenLeft();
+        });
+        
+        document.getElementById('fullscreen-right').addEventListener('click', () => {
+            this.showFullscreenRight();
+        });
+        
+        // Exit fullscreen buttons
+        document.getElementById('exit-fullscreen-left').addEventListener('click', () => {
+            this.exitFullscreen();
+            this.showSideBySide();
+        });
+        
+        document.getElementById('exit-fullscreen-right').addEventListener('click', () => {
+            this.exitFullscreen();
+            this.showSideBySide();
+        });
+        
+        // Add ESC key listener to exit fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' &&
+                (this.currentMode === 'fullscreen-left' || this.currentMode === 'fullscreen-right')) {
+                this.exitFullscreen();
+                this.showSideBySide();
+            }
+        });
+    }
+    
+    showSideBySide() {
+        this.currentMode = 'side-by-side';
+        
+        // Hide all containers
+        document.getElementById('combined-container').classList.add('hidden');
+        document.getElementById('fullscreen-left-container').classList.add('hidden');
+        document.getElementById('fullscreen-right-container').classList.add('hidden');
+        
+        // Show side-by-side container
+        document.getElementById('side-by-side-container').classList.remove('hidden');
+        
+        // Update button styles
+        this.updateButtonStyles('side-by-side');
+    }
+    
+    showCombined() {
+        this.currentMode = 'combined';
+        
+        // Hide all containers
+        document.getElementById('side-by-side-container').classList.add('hidden');
+        document.getElementById('fullscreen-left-container').classList.add('hidden');
+        document.getElementById('fullscreen-right-container').classList.add('hidden');
+        
+        // Show combined container
+        document.getElementById('combined-container').classList.remove('hidden');
+        
+        // Initialize combined visualizer if not already done
+        if (!this.combinedVisualizer) {
+            this.combinedVisualizer = new CombinedPoseVisualizer(this.leftVisualizer, this.rightVisualizer);
+        }
+        
+        // Update button styles
+        this.updateButtonStyles('combined');
+    }
+    
+    showFullscreenLeft() {
+        this.currentMode = 'fullscreen-left';
+        
+        // Hide all containers
+        document.getElementById('side-by-side-container').classList.add('hidden');
+        document.getElementById('combined-container').classList.add('hidden');
+        document.getElementById('fullscreen-right-container').classList.add('hidden');
+        
+        // Show left fullscreen container
+        document.getElementById('fullscreen-left-container').classList.remove('hidden');
+        
+        // Setup fullscreen canvas if not already done
+        this.setupFullscreenCanvas('left');
+        
+        // Enter true fullscreen mode
+        this.enterFullscreen('fullscreen-left-container');
+        
+        // Update button styles
+        this.updateButtonStyles('fullscreen-left');
+    }
+    
+    showFullscreenRight() {
+        this.currentMode = 'fullscreen-right';
+        
+        // Hide all containers
+        document.getElementById('side-by-side-container').classList.add('hidden');
+        document.getElementById('combined-container').classList.add('hidden');
+        document.getElementById('fullscreen-left-container').classList.add('hidden');
+        
+        // Show right fullscreen container
+        document.getElementById('fullscreen-right-container').classList.remove('hidden');
+        
+        // Setup fullscreen canvas if not already done
+        this.setupFullscreenCanvas('right');
+        
+        // Enter true fullscreen mode
+        this.enterFullscreen('fullscreen-right-container');
+        
+        // Update button styles
+        this.updateButtonStyles('fullscreen-right');
+    }
+    
+    enterFullscreen(elementId) {
+        const element = document.getElementById(elementId);
+        
+        // Handle fullscreen for different browsers
+        const requestFullscreen = element.requestFullscreen ||
+                              element.webkitRequestFullscreen ||
+                              element.mozRequestFullScreen ||
+                              element.msRequestFullscreen;
+        
+        if (requestFullscreen) {
+            requestFullscreen.call(element);
+        }
+        
+        // Add fullscreen change listener
+        document.addEventListener('fullscreenchange', this.handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', this.handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', this.handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', this.handleFullscreenChange);
+    }
+    
+    exitFullscreen() {
+        const exitFullscreen = document.exitFullscreen ||
+                            document.webkitExitFullscreen ||
+                            document.mozCancelFullScreen ||
+                            document.msExitFullscreen;
+        
+        if (exitFullscreen) {
+            exitFullscreen.call(document);
+        }
+    }
+    
+    handleFullscreenChange = () => {
+        const isFullscreen = document.fullscreenElement ||
+                          document.webkitFullscreenElement ||
+                          document.mozFullScreenElement ||
+                          document.msFullscreenElement;
+        
+        // If exiting fullscreen, return to side-by-side view
+        if (!isFullscreen) {
+            this.showSideBySide();
+        }
+    }
+    
+    setupFullscreenCanvas(side) {
+        const canvas = document.getElementById(`pose-canvas-${side}-fullscreen`);
+        const ctx = canvas.getContext('2d');
+        
+        // Check if already initialized
+        if (canvas.dataset.initialized === 'true') {
+            return;
+        }
+        
+        // Mark as initialized
+        canvas.dataset.initialized = 'true';
+        
+        // Setup canvas resize
+        const resizeCanvas = () => {
+            const container = canvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            
+            // Set canvas display size (CSS pixels)
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            
+            // Set canvas actual size in memory (scaled for retina displays)
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            
+            // Scale the drawing context to match the device pixel ratio
+            ctx.scale(dpr, dpr);
+        };
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Setup animation loop
+        const visualizer = side === 'left' ? this.leftVisualizer : this.rightVisualizer;
+        const originalCanvas = visualizer.canvas;
+        const originalCtx = visualizer.ctx;
+        
+        const animate = () => {
+            if (this.currentMode !== `fullscreen-${side}`) {
+                return; // Stop animating if not in this mode
+            }
+            
+            // Get the display dimensions (CSS pixels)
+            const container = canvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+            
+            // Get the actual canvas dimensions (including device pixel ratio)
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            
+            // Clear canvas using actual canvas dimensions
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // Draw pose if available
+            if (visualizer.currentLandmarks && visualizer.currentLandmarks.length > 0) {
+                // Scale landmarks to display size (CSS pixels)
+                // The context is already scaled by device pixel ratio, so we use CSS dimensions
+                const scaledLandmarks = visualizer.currentLandmarks.map(landmark => ({
+                    x: landmark.x * width,
+                    y: landmark.y * height,
+                    z: landmark.z || 0,
+                    visibility: landmark.visibility || 0
+                }));
+                
+                // Filter out landmarks that are outside the canvas bounds
+                const visibleLandmarks = scaledLandmarks.filter(landmark => {
+                    return landmark.x >= 0 && landmark.x <= width &&
+                           landmark.y >= 0 && landmark.y <= height &&
+                           landmark.visibility > 0.5;
+                });
+                
+                // If no landmarks are visible, continue animation
+                if (visibleLandmarks.length > 0) {
+                    // Get colors for this side
+                    const colors = side === 'left' ?
+                        { landmark: '#00aaff', connection: '#66ccff' } :  // Blue
+                        { landmark: '#00ff00', connection: '#66ff66' };   // Green
+                    
+                    // Draw connections
+                    ctx.strokeStyle = colors.connection;
+                    ctx.lineWidth = 2;
+                    
+                    visualizer.poseConnections.forEach(([start, end]) => {
+                        if (scaledLandmarks[start] && scaledLandmarks[end] &&
+                            scaledLandmarks[start].visibility > 0.5 && scaledLandmarks[end].visibility > 0.5 &&
+                            // Check if both landmarks are within canvas bounds
+                            scaledLandmarks[start].x >= 0 && scaledLandmarks[start].x <= width &&
+                            scaledLandmarks[start].y >= 0 && scaledLandmarks[start].y <= height &&
+                            scaledLandmarks[end].x >= 0 && scaledLandmarks[end].x <= width &&
+                            scaledLandmarks[end].y >= 0 && scaledLandmarks[end].y <= height) {
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(scaledLandmarks[start].x, scaledLandmarks[start].y);
+                            ctx.lineTo(scaledLandmarks[end].x, scaledLandmarks[end].y);
+                            ctx.stroke();
+                        }
+                    });
+                    
+                    // Draw landmarks
+                    scaledLandmarks.forEach((landmark, index) => {
+                        if (landmark.visibility > 0.5 &&
+                            // Check if landmark is within canvas bounds
+                            landmark.x >= 0 && landmark.x <= width &&
+                            landmark.y >= 0 && landmark.y <= height) {
+                            
+                            ctx.fillStyle = colors.landmark;
+                            ctx.beginPath();
+                            ctx.arc(landmark.x, landmark.y, 5, 0, 2 * Math.PI);
+                            ctx.fill();
+                            
+                            // Add landmark index for debugging
+                            ctx.fillStyle = 'white';
+                            ctx.font = '10px Arial';
+                            ctx.fillText(index.toString(), landmark.x + 8, landmark.y - 8);
+                        }
+                    });
+                }
+            }
+            
+            requestAnimationFrame(animate);
+        };
+        
+        animate();
+    }
+    
+    updateButtonStyles(activeMode) {
+        // Reset all button styles
+        document.getElementById('view-side-by-side').classList.remove('bg-indigo-700');
+        document.getElementById('view-combined').classList.remove('bg-purple-700');
+        document.getElementById('fullscreen-left').classList.remove('bg-blue-700');
+        document.getElementById('fullscreen-right').classList.remove('bg-green-700');
+        
+        // Highlight active button
+        switch (activeMode) {
+            case 'side-by-side':
+                document.getElementById('view-side-by-side').classList.add('bg-indigo-700');
+                break;
+            case 'combined':
+                document.getElementById('view-combined').classList.add('bg-purple-700');
+                break;
+            case 'fullscreen-left':
+                document.getElementById('fullscreen-left').classList.add('bg-blue-700');
+                break;
+            case 'fullscreen-right':
+                document.getElementById('fullscreen-right').classList.add('bg-green-700');
+                break;
+        }
+    }
+}
+
+// Initialize the visualizers when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const leftVisualizer = new PoseSkeletonVisualizer('left');
+    const rightVisualizer = new PoseSkeletonVisualizer('right');
+    const viewModeManager = new ViewModeManager(leftVisualizer, rightVisualizer);
+});
+</script>
+{% endblock extra_js %}

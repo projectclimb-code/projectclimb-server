@@ -609,7 +609,17 @@ class PoseRealtimeView(TemplateView):
 
 class PoseSkeletonView(TemplateView):
     """View for displaying pose skeleton from custom WebSocket."""
-    template_name = 'climber/pose_skeleton.html'
+    template_name = 'climber/pose_skeleton_dual.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['websocket_url'] = self.request.GET.get('ws_url', 'wss://climber.dev.maptnh.net:443/ws/pose/')
+        return context
+
+
+class PoseSkeletonDualView(TemplateView):
+    """View for displaying dual pose skeleton visualizations from two WebSockets."""
+    template_name = 'climber/pose_skeleton_dual.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

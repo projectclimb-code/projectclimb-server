@@ -121,20 +121,7 @@ async def stream_pose_landmarks():
                     # Handle control messages from server
                     try:
                         response = await asyncio.wait_for(websocket.recv(), timeout=0.001)
-                        control_data = json.loads(response)
-                        
-                        if control_data.get('type') == 'recording_started':
-                            is_recording = True
-                            recording_session_id = control_data.get('session_id')
-                            recording_start_time = datetime.now()
-                            frame_count = 0
-                            print(f"Started recording session: {recording_session_id}")
-                            
-                        elif control_data.get('type') == 'recording_stopped':
-                            is_recording = False
-                            print(f"Stopped recording session: {recording_session_id}")
-                            recording_session_id = None
-                            recording_start_time = None
+
                             
                     except asyncio.TimeoutError:
                         # No control message, continue streaming

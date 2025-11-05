@@ -9,7 +9,7 @@ from .views import (
     WallListView, WallDetailView, WallCreateView, WallUpdateView, WallDeleteView,
     HoldListView, HoldDetailView, HoldCreateView, HoldUpdateView, HoldDeleteView,
     RouteListView, RouteDetailView, RouteCreateView, RouteUpdateView, RouteDeleteView,
-    CameraView, video_feed, capture_frame, PoseRealtimeView, PoseSkeletonView, PhoneCameraView, WebSocketRelayTestView,
+    CameraView, video_feed, capture_frame, PoseRealtimeView, PoseSkeletonView, PoseSkeletonDualView, PhoneCameraView, WebSocketRelayTestView,
     SessionListView, SessionDetailView, SessionDeleteView, SessionReplayView,
     SessionRecordingViewSet,
     TaskManagementView, trigger_fake_session_task, get_task_status,
@@ -103,6 +103,7 @@ urlpatterns = [
     path('video_feed/', video_feed, name='video_feed'),
     path('pose/', PoseRealtimeView.as_view(), name='pose_realtime'),
     path('pose-skeleton/', PoseSkeletonView.as_view(), name='pose_skeleton'),
+    path('pose-skeleton-dual/', PoseSkeletonDualView.as_view(), name='pose_skeleton_dual'),
     path('phone-camera/', PhoneCameraView.as_view(), name='phone_camera'),
     path('websocket-relay-test/', WebSocketRelayTestView.as_view(), name='websocket_relay_test'),
     

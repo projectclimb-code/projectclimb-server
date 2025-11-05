@@ -1,12 +1,9 @@
+
+{% comment %}
 {% extends "base.html" %}
+{% endcomment %}
 {% load static %}
 
-{% block title %}Phone Camera - Climber Project{% endblock title %}
-
-{% block extra_js %}
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
-{% endblock extra_js %}
 
 {% block content %}
 
@@ -15,6 +12,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pose Stream</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
 </head>
@@ -209,7 +209,7 @@
     
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     pose.onResults(results => {
-      console.log(results);
+      //console.log(results);
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.clearRect(0,0,canvas.width,canvas.height);

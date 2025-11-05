@@ -16,7 +16,7 @@ from channels.db import database_sync_to_async
 
 from climber.models import Wall, WallCalibration
 from climber.calibration.calibration_utils import CalibrationUtils
-
+from climber.tansformation_utils import apply_homography_to_mediapipe_json
 
 class InputWebSocketClient:
     """WebSocket client for receiving MediaPipe pose data"""
