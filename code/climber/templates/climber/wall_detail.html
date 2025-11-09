@@ -157,6 +157,7 @@
         <a href="{% url 'wall_update' wall.uuid %}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">Edit</a>
         <a href="{% url 'wall_delete' wall.uuid %}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mr-2">Delete</a>
         <a href="{% url 'wall_calibration_list' wall.pk %}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">Manage Calibrations</a>
+        <button id="get-wall-image-btn" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mr-2">Get Wall Image</button>
         {% if wall.svg_file %}
         
         {% endif %}
@@ -613,6 +614,82 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             uploadMessage.classList.add('hidden');
         }, 5000);
+    }
+});
+
+// WebSocket functionality for Get Wall Image button
+document.addEventListener('DOMContentLoaded', function() {
+    const getWallImageBtn = document.getElementById('get-wall-image-btn');
+    const wallId = "{{ wall.uuid }}";
+    
+    if (getWallImageBtn) {
+        getWallImageBtn.addEventListener('click', function() {
+            // Create WebSocket connection
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/pose/`;
+            
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            const socket = new WebSocket(wsUrl);
+            
+            // Handle WebSocket connection open
+            socket.onopen = function(event) {
+                console.log('WebSocket connection established');
+                
+                // Send the get_image message
+                const message = {
+                    "type": "get_image",
+                    "wall_id": wallId
+                };
+                
+                socket.send(JSON.stringify(message));
+                console.log('Sent message:', message);
+                
+                // Show feedback to user
+                getWallImageBtn.textContent = 'Message Sent!';
+                getWallImageBtn.classList.remove('bg-purple-500', 'hover:bg-purple-700');
+                getWallImageBtn.classList.add('bg-green-500', 'hover:bg-green-700');
+                
+                // Close the connection after sending the message
+                setTimeout(() => {
+                    socket.close();
+                }, 1000);
+            };
+            
+            // Handle WebSocket connection close
+            socket.onclose = function(event) {
+                console.log('WebSocket connection closed:', event.code, event.reason);
+                
+                // Reset button after a delay
+                setTimeout(() => {
+                    getWallImageBtn.textContent = 'Get Wall Image';
+                    getWallImageBtn.classList.remove('bg-green-500', 'hover:bg-green-700');
+                    getWallImageBtn.classList.add('bg-purple-500', 'hover:bg-purple-700');
+                }, 2000);
+            };
+            
+            // Handle WebSocket errors
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                
+                // Show error feedback to user
+                getWallImageBtn.textContent = 'Connection Error';
+                getWallImageBtn.classList.remove('bg-purple-500', 'hover:bg-purple-700');
+                getWallImageBtn.classList.add('bg-red-500', 'hover:bg-red-700');
+                
+                // Reset button after a delay
+                setTimeout(() => {
+                    getWallImageBtn.textContent = 'Get Wall Image';
+                    getWallImageBtn.classList.remove('bg-red-500', 'hover:bg-red-700');
+                    getWallImageBtn.classList.add('bg-purple-500', 'hover:bg-purple-700');
+                }, 3000);
+            };
+            
+            // Handle incoming messages (optional, for debugging)
+            socket.onmessage = function(event) {
+                console.log('WebSocket message received:', event.data);
+            };
+        });
     }
 });
 </script>

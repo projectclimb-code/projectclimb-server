@@ -76,171 +76,198 @@
     </div>
   </div>
 
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('output');
-    const ctx = canvas.getContext('2d');
-    const wsUrlInput = document.getElementById('wsUrl');
-    const connectBtn = document.getElementById('connectBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    const statusEl = document.getElementById('status');
-    const cameraSelect = document.getElementById('cameraSelect');
-    const zoomRange = document.getElementById('zoomRange');
-    const poseRateSlider = document.getElementById('poseRateSlider');
-    const rateValue = document.getElementById('rateValue');
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('output');
+  const ctx = canvas.getContext('2d');
+  const wsUrlInput = document.getElementById('wsUrl');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const statusEl = document.getElementById('status');
+  const cameraSelect = document.getElementById('cameraSelect');
+  const zoomRange = document.getElementById('zoomRange');
+  const poseRateSlider = document.getElementById('poseRateSlider');
+  const rateValue = document.getElementById('rateValue');
+  var csrf = "{{ csrf_token }}";
 
-    let ws, camera;
-    let lastPoseSentTime = 0;
+  let ws, camera;
+  let lastPoseSentTime = 0;
 
-    // Load saved settings or defaults
-    const savedUrl = localStorage.getItem('wsUrl') || 'wss://a.com';
-    const savedCam = localStorage.getItem('cameraId');
-    const savedZoom = localStorage.getItem('zoom') || 1;
-    const savedPoseRate = localStorage.getItem('poseRate') || 0;
-    const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
-    wsUrlInput.value = savedUrl;
-    zoomRange.value = savedZoom;
-    poseRateSlider.value = savedPoseRate;
-    rateValue.textContent = savedPoseRate;
+  // Load saved settings or defaults
+  const savedUrl = localStorage.getItem('wsUrl') || 'wss://a.com';
+  const savedCam = localStorage.getItem('cameraId');
+  const savedZoom = localStorage.getItem('zoom') || 1;
+  const savedPoseRate = localStorage.getItem('poseRate') || 0;
+  const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
+  wsUrlInput.value = savedUrl;
+  zoomRange.value = savedZoom;
+  poseRateSlider.value = savedPoseRate;
+  rateValue.textContent = savedPoseRate;
 
-    function setStatus(text, cls) {
-      statusEl.textContent = text;
-      statusEl.className = 'mt-2 text-sm font-medium ' + cls;
-    }
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'mt-2 text-sm font-medium ' + cls;
+  }
 
-    function connectWS() {
-      const url = wsUrlInput.value.trim();
-      if (!url) return;
-      localStorage.setItem('wsUrl', url);
-      setStatus('Connecting...', 'text-yellow-500');
-      ws = new WebSocket(url);
-      ws.onopen = () => { setStatus('Connected', 'text-green-600'); localStorage.setItem('autoReconnect', 'true'); };
-      ws.onclose = () => { setStatus('Disconnected', 'text-red-500'); if(localStorage.getItem('autoReconnect')==='true'){ setTimeout(connectWS,3000); } };
-      ws.onerror = () => { setStatus('Error', 'text-red-600'); };
-      ws.onmessage = ev => {
-        try {
-          const msg = JSON.parse(ev.data);
-          if(msg.type==='get_image') sendCurrentImage();
-        } catch(e){ console.error(e); }
-      };
-    }
-
-    function disconnectWS() {
-      localStorage.setItem('autoReconnect', 'false');
-      if(ws) { ws.close(); }
-    }
-
-    connectBtn.onclick = connectWS;
-    disconnectBtn.onclick = disconnectWS;
-
-    function sendPose(landmarks, width, height){
-      if(ws && ws.readyState === WebSocket.OPEN){
-        const maxRate = parseFloat(poseRateSlider.value);
-        const currentTime = Date.now();
-        
-        // If maxRate is 0, send immediately (unlimited)
-        if (maxRate === 0) {
-          ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
-          return;
-        }
-        
-        // Otherwise, check if enough time has passed
-        const timeSinceLastSend = currentTime - lastPoseSentTime;
-        const minInterval = maxRate * 1000; // Convert to milliseconds
-        
-        if (timeSinceLastSend >= minInterval) {
-          ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
-          lastPoseSentTime = currentTime;
-        }
-      }
-    }
-
-    function sendCurrentImage(){
-      if(ws && ws.readyState === WebSocket.OPEN){
-        const data = canvas.toDataURL('image/jpeg',0.6);
-        ws.send(JSON.stringify({type:'image',timestamp:Date.now(),data}));
-      }
-    }
-
-    async function startCamera(deviceId){
-      if(camera) { camera.stop(); }
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId?{exact:deviceId}:undefined } });
-      video.srcObject = stream;
-      const track = stream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities();
-      if(capabilities.zoom){
-        zoomRange.min = capabilities.zoom.min;
-        zoomRange.max = capabilities.zoom.max;
-        zoomRange.step = capabilities.zoom.step || 0.1;
-        zoomRange.value = savedZoom;
-        zoomRange.oninput = () => {
-          track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
-          localStorage.setItem('zoom', zoomRange.value);
-        };
-        track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
-      }
-      localStorage.setItem('cameraId', deviceId || '');
-    }
-
-    async function loadCameras(){
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const vids = devices.filter(d=>d.kind==='videoinput');
-      cameraSelect.innerHTML = '';
-      vids.forEach(d=>{
-        const opt = document.createElement('option');
-        opt.value = d.deviceId;
-        opt.textContent = d.label || `Camera ${cameraSelect.length+1}`;
-        cameraSelect.appendChild(opt);
-      });
-      if(savedCam && vids.some(v=>v.deviceId===savedCam)) cameraSelect.value = savedCam;
-      startCamera(cameraSelect.value);
-    }
-
-    cameraSelect.onchange = () => startCamera(cameraSelect.value);
-    
-    // Handle pose rate slider changes
-    poseRateSlider.oninput = () => {
-      const value = poseRateSlider.value;
-      rateValue.textContent = value;
-      localStorage.setItem('poseRate', value);
+  function connectWS() {
+    const url = wsUrlInput.value.trim();
+    if (!url) return;
+    localStorage.setItem('wsUrl', url);
+    setStatus('Connecting...', 'text-yellow-500');
+    ws = new WebSocket(url);
+    ws.onopen = () => { 
+      setStatus('Connected', 'text-green-600'); 
+      localStorage.setItem('autoReconnect', 'true'); 
     };
-
-    const pose = new Pose({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${f}`});
-    
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    pose.onResults(results => {
-      //console.log(results);
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
-      if(results.poseLandmarks){
-        for(const lm of results.poseLandmarks){
-          ctx.beginPath();
-          ctx.arc(lm.x*canvas.width, lm.y*canvas.height, 3, 0, 2*Math.PI);
-          ctx.fillStyle = 'rgba(0,255,0,0.7)';
-          ctx.fill();
+    ws.onclose = () => { 
+      setStatus('Disconnected', 'text-red-500'); 
+      if(localStorage.getItem('autoReconnect')==='true'){ 
+        setTimeout(connectWS,3000); 
+      } 
+    };
+    ws.onerror = () => { setStatus('Error', 'text-red-600'); };
+    ws.onmessage = ev => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'get_image' && msg.wall_id) {
+          sendImageToApi(msg.wall_id);
         }
-        sendPose(results.poseLandmarks, canvas.width, canvas.height);
+      } catch(e){ console.error(e); }
+    };
+  }
+
+  function disconnectWS() {
+    localStorage.setItem('autoReconnect', 'false');
+    if(ws) { ws.close(); }
+  }
+
+  connectBtn.onclick = connectWS;
+  disconnectBtn.onclick = disconnectWS;
+
+  function sendPose(landmarks, width, height){
+    if(ws && ws.readyState === WebSocket.OPEN){
+      const maxRate = parseFloat(poseRateSlider.value);
+      const currentTime = Date.now();
+      
+      // If maxRate is 0, send immediately (unlimited)
+      if (maxRate === 0) {
+        ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
+        return;
       }
-    });
+      
+      // Otherwise, check if enough time has passed
+      const timeSinceLastSend = currentTime - lastPoseSentTime;
+      const minInterval = maxRate * 1000; // Convert to milliseconds
+      
+      if (timeSinceLastSend >= minInterval) {
+        ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
+        lastPoseSentTime = currentTime;
+      }
+    }
+  }
 
-    const camUtils = new Camera(video, { onFrame: async () => { await pose.send({image: video}); }, width: 480, height: 360 });
-    camUtils.start();
+  async function sendImageToApi(wall_id) {
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      const formData = new FormData();
+      formData.append('wall_id', wall_id);
+      formData.append('image_data', dataUrl);
 
-    loadCameras();
+      const response = await fetch('/api/upload-wall-image/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+                  "X-CSRFToken": csrf,
+                },
+      });
 
-    document.querySelectorAll('input[name="view"]').forEach(r => {
-      r.onchange = () => {
-        const v = r.value;
-        video.style.display = (v==='both'||v==='video')?'block':'none';
-        canvas.style.display = (v==='both'||v==='pose')?'block':'none';
+      if (!response.ok) {
+        console.error('Image upload failed:', response.status, await response.text());
+      } else {
+        console.log('Image uploaded successfully for wall_id:', wall_id);
+      }
+    } catch (err) {
+      console.error('Error uploading image:', err);
+    }
+  }
+
+  async function startCamera(deviceId){
+    if(camera) { camera.stop(); }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId?{exact:deviceId}:undefined } });
+    video.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
+    const capabilities = track.getCapabilities();
+    if(capabilities.zoom){
+      zoomRange.min = capabilities.zoom.min;
+      zoomRange.max = capabilities.zoom.max;
+      zoomRange.step = capabilities.zoom.step || 0.1;
+      zoomRange.value = savedZoom;
+      zoomRange.oninput = () => {
+        track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+        localStorage.setItem('zoom', zoomRange.value);
       };
+      track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+    }
+    localStorage.setItem('cameraId', deviceId || '');
+  }
+
+  async function loadCameras(){
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const vids = devices.filter(d=>d.kind==='videoinput');
+    cameraSelect.innerHTML = '';
+    vids.forEach(d=>{
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Camera ${cameraSelect.length+1}`;
+      cameraSelect.appendChild(opt);
     });
+    if(savedCam && vids.some(v=>v.deviceId===savedCam)) cameraSelect.value = savedCam;
+    startCamera(cameraSelect.value);
+  }
 
-    if(autoReconnect) connectWS();
-  </script>
+  cameraSelect.onchange = () => startCamera(cameraSelect.value);
+  
+  // Handle pose rate slider changes
+  poseRateSlider.oninput = () => {
+    const value = poseRateSlider.value;
+    rateValue.textContent = value;
+    localStorage.setItem('poseRate', value);
+  };
 
+  const pose = new Pose({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${f}`});
+  
+  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  pose.onResults(results => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+    if(results.poseLandmarks){
+      for(const lm of results.poseLandmarks){
+        ctx.beginPath();
+        ctx.arc(lm.x*canvas.width, lm.y*canvas.height, 3, 0, 2*Math.PI);
+        ctx.fillStyle = 'rgba(0,255,0,0.7)';
+        ctx.fill();
+      }
+      sendPose(results.poseLandmarks, canvas.width, canvas.height);
+    }
+  });
+
+  const camUtils = new Camera(video, { onFrame: async () => { await pose.send({image: video}); }, width: 480, height: 360 });
+  camUtils.start();
+
+  loadCameras();
+
+  document.querySelectorAll('input[name="view"]').forEach(r => {
+    r.onchange = () => {
+      const v = r.value;
+      video.style.display = (v==='both'||v==='video')?'block':'none';
+      canvas.style.display = (v==='both'||v==='pose')?'block':'none';
+    };
+  });
+
+  if(autoReconnect) connectWS();
+</script>
 
 
 {% endblock content %}

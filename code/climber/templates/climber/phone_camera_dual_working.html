@@ -1,0 +1,246 @@
+
+{% comment %}
+{% extends "base.html" %}
+{% endcomment %}
+{% load static %}
+
+
+{% block content %}
+
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pose Stream</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-6">Camera Stream</h1>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Camera Settings</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div>
+          <label class="block text-sm font-medium">Select Camera:</label>
+          <select id="cameraSelect" class="border rounded px-2 py-1 w-full"></select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Zoom:</label>
+          <input id="zoomRange" type="range" min="1" max="1" step="0.1" value="1" class="w-full">
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Connection Settings</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <input id="wsUrl" type="text" size="30" class="border rounded px-2 py-1 flex-grow" placeholder="wss://a.com">
+        <button id="connectBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Connect</button>
+        <button id="disconnectBtn" class="bg-gray-300 hover:bg-gray-400 text-black px-3 py-1 rounded">Disconnect</button>
+      </div>
+      <div id="status" class="mt-2 text-sm font-medium text-red-500">Disconnected</div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Display Options</h2>
+      <div class="flex flex-wrap gap-4">
+        <label><input type="radio" name="view" value="both" checked class="mr-1">Both</label>
+        <label><input type="radio" name="view" value="video" class="mr-1">Video only</label>
+        <label><input type="radio" name="view" value="pose" class="mr-1">Pose only</label>
+        <label><input type="radio" name="view" value="none" class="mr-1">None</label>
+      </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Pose Send Rate</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex-1">
+          <label class="block text-sm font-medium mb-1">Max Send Rate: <span id="rateValue">0</span> seconds</label>
+          <input id="poseRateSlider" type="range" min="0" max="3" step="0.1" value="0" class="w-full">
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>0 (unlimited)</span>
+            <span>3 seconds</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col items-center">
+      <video id="video" playsinline class="rounded-lg shadow mb-2 w-full max-w-md"></video>
+      <canvas id="output" class="rounded-lg shadow w-full max-w-md"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+    const wsUrlInput = document.getElementById('wsUrl');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const statusEl = document.getElementById('status');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const zoomRange = document.getElementById('zoomRange');
+    const poseRateSlider = document.getElementById('poseRateSlider');
+    const rateValue = document.getElementById('rateValue');
+
+    let ws, camera;
+    let lastPoseSentTime = 0;
+
+    // Load saved settings or defaults
+    const savedUrl = localStorage.getItem('wsUrl') || 'wss://a.com';
+    const savedCam = localStorage.getItem('cameraId');
+    const savedZoom = localStorage.getItem('zoom') || 1;
+    const savedPoseRate = localStorage.getItem('poseRate') || 0;
+    const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
+    wsUrlInput.value = savedUrl;
+    zoomRange.value = savedZoom;
+    poseRateSlider.value = savedPoseRate;
+    rateValue.textContent = savedPoseRate;
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = 'mt-2 text-sm font-medium ' + cls;
+    }
+
+    function connectWS() {
+      const url = wsUrlInput.value.trim();
+      if (!url) return;
+      localStorage.setItem('wsUrl', url);
+      setStatus('Connecting...', 'text-yellow-500');
+      ws = new WebSocket(url);
+      ws.onopen = () => { setStatus('Connected', 'text-green-600'); localStorage.setItem('autoReconnect', 'true'); };
+      ws.onclose = () => { setStatus('Disconnected', 'text-red-500'); if(localStorage.getItem('autoReconnect')==='true'){ setTimeout(connectWS,3000); } };
+      ws.onerror = () => { setStatus('Error', 'text-red-600'); };
+      ws.onmessage = ev => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if(msg.type==='get_image') sendCurrentImage();
+        } catch(e){ console.error(e); }
+      };
+    }
+
+    function disconnectWS() {
+      localStorage.setItem('autoReconnect', 'false');
+      if(ws) { ws.close(); }
+    }
+
+    connectBtn.onclick = connectWS;
+    disconnectBtn.onclick = disconnectWS;
+
+    function sendPose(landmarks, width, height){
+      if(ws && ws.readyState === WebSocket.OPEN){
+        const maxRate = parseFloat(poseRateSlider.value);
+        const currentTime = Date.now();
+        
+        // If maxRate is 0, send immediately (unlimited)
+        if (maxRate === 0) {
+          ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
+          return;
+        }
+        
+        // Otherwise, check if enough time has passed
+        const timeSinceLastSend = currentTime - lastPoseSentTime;
+        const minInterval = maxRate * 1000; // Convert to milliseconds
+        
+        if (timeSinceLastSend >= minInterval) {
+          ws.send(JSON.stringify({type:'pose',timestamp:currentTime,width,height,landmarks}));
+          lastPoseSentTime = currentTime;
+        }
+      }
+    }
+
+    function sendCurrentImage(){
+      if(ws && ws.readyState === WebSocket.OPEN){
+        const data = canvas.toDataURL('image/jpeg',0.6);
+        ws.send(JSON.stringify({type:'image',timestamp:Date.now(),data}));
+      }
+    }
+
+    async function startCamera(deviceId){
+      if(camera) { camera.stop(); }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId?{exact:deviceId}:undefined } });
+      video.srcObject = stream;
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities();
+      if(capabilities.zoom){
+        zoomRange.min = capabilities.zoom.min;
+        zoomRange.max = capabilities.zoom.max;
+        zoomRange.step = capabilities.zoom.step || 0.1;
+        zoomRange.value = savedZoom;
+        zoomRange.oninput = () => {
+          track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+          localStorage.setItem('zoom', zoomRange.value);
+        };
+        track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+      }
+      localStorage.setItem('cameraId', deviceId || '');
+    }
+
+    async function loadCameras(){
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const vids = devices.filter(d=>d.kind==='videoinput');
+      cameraSelect.innerHTML = '';
+      vids.forEach(d=>{
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Camera ${cameraSelect.length+1}`;
+        cameraSelect.appendChild(opt);
+      });
+      if(savedCam && vids.some(v=>v.deviceId===savedCam)) cameraSelect.value = savedCam;
+      startCamera(cameraSelect.value);
+    }
+
+    cameraSelect.onchange = () => startCamera(cameraSelect.value);
+    
+    // Handle pose rate slider changes
+    poseRateSlider.oninput = () => {
+      const value = poseRateSlider.value;
+      rateValue.textContent = value;
+      localStorage.setItem('poseRate', value);
+    };
+
+    const pose = new Pose({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${f}`});
+    
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    pose.onResults(results => {
+      //console.log(results);
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+      if(results.poseLandmarks){
+        for(const lm of results.poseLandmarks){
+          ctx.beginPath();
+          ctx.arc(lm.x*canvas.width, lm.y*canvas.height, 3, 0, 2*Math.PI);
+          ctx.fillStyle = 'rgba(0,255,0,0.7)';
+          ctx.fill();
+        }
+        sendPose(results.poseLandmarks, canvas.width, canvas.height);
+      }
+    });
+
+    const camUtils = new Camera(video, { onFrame: async () => { await pose.send({image: video}); }, width: 480, height: 360 });
+    camUtils.start();
+
+    loadCameras();
+
+    document.querySelectorAll('input[name="view"]').forEach(r => {
+      r.onchange = () => {
+        const v = r.value;
+        video.style.display = (v==='both'||v==='video')?'block':'none';
+        canvas.style.display = (v==='both'||v==='pose')?'block':'none';
+      };
+    });
+
+    if(autoReconnect) connectWS();
+  </script>
+
+
+
+{% endblock content %}

@@ -14,7 +14,7 @@ from .views import (
     SessionRecordingViewSet,
     TaskManagementView, trigger_fake_session_task, get_task_status,
     wall_upload_svg, wall_upload_image, wall_capture_camera_image,
-    WallAnimationView, DemoView,
+    WallAnimationView, DemoView, api_upload_wall_image,
 )
 from .calibration.views import (
     wall_calibration_list, calibration_create, calibration_detail,
@@ -38,6 +38,7 @@ urlpatterns = [
     path('', HomePageView.as_view(), name='home'),  # New home page
     path('api/', include(router.urls)),  # Existing API urls, now prefixed
     path('api/capture_frame/', capture_frame, name='capture_frame'),
+    path('api/upload-wall-image/', api_upload_wall_image, name='api_upload_wall_image'),
 
     # Group CRUD URLs
     path('groups/', GroupListView.as_view(), name='group_list'),

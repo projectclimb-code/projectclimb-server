@@ -5,8 +5,11 @@ from django.http import HttpResponse, Http404, JsonResponse # Added for HTMX res
 from django.utils.translation import gettext_lazy as _ # For Http404 message
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
 from rest_framework import viewsets
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame # Import all models
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
 from django.contrib.auth.models import User
@@ -804,3 +807,81 @@ class WallAnimationView(UUIDLookupMixin, DetailView):
 class DemoView(TemplateView):
     """View for demo page."""
     template_name = 'climber/demo.html'
+
+
+@api_view(['POST'])
+#@permission_classes([IsAuthenticated])
+def api_upload_wall_image(request):
+    """
+    API endpoint to accept base64 encoded image and wall ID,
+    and save the image as JPEG to wall.wall_image field.
+    """
+    try:
+        # Get data from request
+        wall_id = request.data.get('wall_id')
+        image_data = request.data.get('image_data')
+        
+        if not wall_id or not image_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'Both wall_id and image_data are required'
+            }, status=400)
+        
+        # Get the wall object
+        try:
+            wall = Wall.objects.get(uuid=wall_id)
+        except Wall.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': f'Wall with ID {wall_id} not found'
+            }, status=404)
+        
+        # Process base64 image
+        import base64
+        from django.core.files.base import ContentFile
+        import io
+        from PIL import Image
+        
+        # Remove data URL prefix if present
+        if 'data:image/' in image_data:
+            # Find the comma separating metadata from the actual data
+            comma_pos = image_data.find(',')
+            if comma_pos != -1:
+                image_data = image_data[comma_pos + 1:]
+        
+        # Decode base64
+        try:
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # Convert to RGB if necessary (for JPEG compatibility)
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Save to ContentFile as JPEG
+            image_io = io.BytesIO()
+            image.save(image_io, format='JPEG', quality=85)
+            image_file = ContentFile(image_io.getvalue(), name=f'wall_image_{wall.uuid}.jpg')
+            
+            # Save to wall model
+            wall.wall_image = image_file
+            wall.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Wall image uploaded successfully',
+                'wall_id': str(wall.uuid),
+                'image_url': wall.wall_image.url if wall.wall_image else None
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Error processing image: {str(e)}'
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }, status=500)
