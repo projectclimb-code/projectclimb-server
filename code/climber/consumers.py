@@ -589,3 +589,80 @@ class TransformedPoseConsumer(AsyncWebsocketConsumer):
 
         # Send message to WebSocket
         await self.send(text_data=message)
+
+
+class GeneralConsumer(AsyncWebsocketConsumer):
+    """
+    General-purpose WebSocket consumer that creates rooms for all connected clients
+    and passes messages to all connected clients. Messages can be strings or JSON.
+    The room name is dynamically created from the URL parameter <string>.
+    """
+    async def connect(self):
+        # Get the room name from URL parameter
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_group_name = f'general_{self.room_name}'
+        
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+        print(f"General WebSocket connection established for room: {self.room_name}")
+
+    async def disconnect(self, close_code):
+        # Leave room group
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+        print(f"General WebSocket connection closed for room {self.room_name}: {close_code}")
+
+    async def receive(self, text_data):
+        """
+        Receive message from WebSocket and broadcast it to all connected clients in the room.
+        Accepts both string messages and JSON data.
+        """
+        try:
+            # Try to parse as JSON first
+            data = json.loads(text_data)
+            message_type = data.get('type', 'message')
+            message_content = data
+            
+            # Broadcast the JSON data to all clients in the group
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'general_message',
+                    'message': message_content,
+                    'sender': self.channel_name,
+                    'message_type': message_type
+                }
+            )
+        except json.JSONDecodeError:
+            # If not JSON, treat as plain string message
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'general_message',
+                    'message': text_data,
+                    'sender': self.channel_name,
+                    'message_type': 'string'
+                }
+            )
+
+    async def general_message(self, event):
+        """
+        Receive message from room group and send it to WebSocket.
+        """
+        message = event['message']
+        sender = event.get('sender', 'unknown')
+        message_type = event.get('message_type', 'message')
+        
+        # Prepare the response
+        if message_type == 'string':
+            # Send as plain string
+            await self.send(text_data=message)
+        else:
+            # Send as JSON
+            await self.send(text_data=json.dumps(message))
