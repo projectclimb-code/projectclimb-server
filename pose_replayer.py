@@ -240,7 +240,7 @@ class JsonsFileReader:
                 delay = self.timestamps[i] - self.timestamps[i-1]
                 # Convert milliseconds to seconds if needed
                 # If timestamps are in milliseconds (likely if values > 1e6), convert to seconds
-                if True: #delay > 10:  # Likely milliseconds
+                if isinstance(timestamp, int) and timestamp > 1000000:  # Large integer timestamps are likely milliseconds
                     delay = delay / 1000.0
                 # Ensure non-negative delay
                 delays.append(max(0.0, delay))
