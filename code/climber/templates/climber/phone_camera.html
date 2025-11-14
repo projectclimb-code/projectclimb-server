@@ -39,7 +39,7 @@
     <div class="bg-white shadow rounded-lg p-4 mb-6">
       <h2 class="text-lg font-semibold mb-2">Connection Settings</h2>
       <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-        <input id="wsUrl" type="text" size="30" class="border rounded px-2 py-1 flex-grow" placeholder="wss://a.com">
+        <input id="wsUrl" type="text" size="30" class="border rounded px-2 py-1 flex-grow" placeholder="ws://climb.net/ws/pose/">
         <button id="connectBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Connect</button>
         <button id="disconnectBtn" class="bg-gray-300 hover:bg-gray-400 text-black px-3 py-1 rounded">Disconnect</button>
       </div>
@@ -173,7 +173,7 @@
       formData.append('wall_id', wall_id);
       formData.append('image_data', dataUrl);
 
-      const response = await fetch('/api/upload-wall-image/', {
+      const response = await fetch('http://climb.net/api/upload-wall-image/', {
         method: 'POST',
         body: formData,
         headers: {

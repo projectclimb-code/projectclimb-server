@@ -228,7 +228,6 @@ class WebSocketPoseTransformer:
                         [-0.017790708207697313, 0.7811108885186794, -0.023430990240347126],
                         [-0.03868152961860345, -0.7459689352582686, 1.0]]
         result = apply_homography_to_mediapipe_json(result, transform_matrix)
-
         
         return result
     

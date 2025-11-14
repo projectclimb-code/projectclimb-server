@@ -13,7 +13,11 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame # Import all models
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
 from django.contrib.auth.models import User
+from django.conf import settings
+
 from .tasks import send_fake_session_data_task
+
+from revproxy.views import ProxyView
 
 from .serializers import (
     GroupSerializer, AppUserSerializer, VenueSerializer, WallSerializer,
@@ -885,3 +889,12 @@ def api_upload_wall_image(request):
             'success': False,
             'error': f'Server error: {str(e)}'
         }, status=500)
+
+
+
+
+class ClientProxyView(ProxyView):
+    upstream = settings.CLIENT_URL
+    rewrite = (
+        (r'^/client/(.*)$', r'\1'),
+     )

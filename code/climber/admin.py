@@ -110,6 +110,10 @@ class WallCalibrationAdmin(admin.ModelAdmin):
         (None, {
             'fields': ('wall', 'name', 'description', 'calibration_type', 'is_active')
         }),
+        ('Hand Landmark Extension', {
+            'fields': ('hand_extension_percent',),
+            'description': 'Configure how far to extend hand landmarks beyond the palm for pose transformation.'
+        }),
         ('Camera Calibration', {
             'fields': ('camera_matrix', 'distortion_coeffs'),
             'classes': ('collapse',)

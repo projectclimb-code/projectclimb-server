@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-jv2fhy*n4&512-y=a=wtoevu7^5=_lpc&hd=%(wda__h%!+(hq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4']
 
 CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net',]
 # Application definition
@@ -55,8 +55,13 @@ INSTALLED_APPS = [
     'drf_yasg',
     'tailwind',
     'theme', # for django-tailwind 
-    'climber'
+    'climber',
+    'revproxy.apps.RevProxyConfig',
 ]
+
+
+CLIENT_URL =  env('CLIENT_URL')
+PLAYER_URL =  env('PLAYER_URL')
 
 # Celery Configuration
 

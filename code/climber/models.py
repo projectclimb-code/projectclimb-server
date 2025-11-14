@@ -182,6 +182,12 @@ class WallCalibration(BaseModel):
     reprojection_error = models.FloatField(null=True, blank=True, help_text="Calibration accuracy measure")
     overlay_image = models.ImageField(upload_to='calibration_overlays/', null=True, blank=True, help_text="Generated image with SVG overlay")
     
+    # Hand landmark extension parameters
+    hand_extension_percent = models.FloatField(
+        default=20.0,
+        help_text="Percentage to extend hand landmarks beyond the palm (0-100)"
+    )
+    
     # Status
     is_active = models.BooleanField(default=True)
     

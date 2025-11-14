@@ -12,7 +12,7 @@ COPY pyproject.toml .
 RUN uv sync 
 # --locked
 COPY requirements.txt /code/
-RUN uv pip install -r requirements.txt
+#RUN uv pip install -r requirements.txt
 #COPY  . /code/
 
 #WORKDIR /code/
