@@ -214,14 +214,15 @@ class JsonsFileReader:
                     try:
                         # Try parsing as float
                         timestamp = float(timestamp)
-                        # Check if it's likely in microseconds or milliseconds (large number)
-                        # These timestamps appear to be in microseconds since they're around 1.7e15
-                        # Convert microseconds to seconds by dividing by 1,000,000
-                        if isinstance(timestamp, int) and timestamp > 1e12:  # Large integer timestamps are likely microseconds
-                            timestamp = timestamp / 1000000.0
                     except ValueError:
                         logger.warning(f"Cannot parse timestamp '{timestamp}' in object {i}")
                         timestamp = i
+            
+            # Convert microseconds to milliseconds if needed
+            # These timestamps appear to be in microseconds since they're around 1.7e12
+            # Convert microseconds to milliseconds by dividing by 1000
+            if isinstance(timestamp, (int, float)) and timestamp > 1e12:  # Large integer timestamps are likely microseconds
+                timestamp = timestamp / 1000.0
             
             self.timestamps.append(float(timestamp))
         
@@ -238,10 +239,6 @@ class JsonsFileReader:
                 delays.append(0.0)  # No delay for first message (send immediately)
             else:
                 delay = self.timestamps[i] - self.timestamps[i-1]
-                # Convert milliseconds to seconds if needed
-                # If timestamps are in milliseconds (likely if values > 1e6), convert to seconds
-                if isinstance(timestamp, int) and timestamp > 1000000:  # Large integer timestamps are likely milliseconds
-                    delay = delay / 1000.0
                 # Ensure non-negative delay
                 delays.append(max(0.0, delay))
         
