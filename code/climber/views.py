@@ -10,7 +10,7 @@ from django.contrib import messages
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame # Import all models
+from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame, WallCalibration # Import all models
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -22,7 +22,7 @@ from revproxy.views import ProxyView
 from .serializers import (
     GroupSerializer, AppUserSerializer, VenueSerializer, WallSerializer,
     HoldSerializer, RouteSerializer, SessionSerializer,
-    SessionRecordingSerializer, SessionFrameSerializer
+    SessionRecordingSerializer, SessionFrameSerializer, WallCalibrationSerializer
 )
 
 # DRF ViewSets
@@ -88,6 +88,10 @@ class SessionRecordingViewSet(viewsets.ModelViewSet):
         # Handle anonymous users - don't allow creation
         if not self.request.user.is_anonymous:
             serializer.save(user=self.request.user)
+
+class WallCalibrationViewSet(viewsets.ModelViewSet):
+    queryset = WallCalibration.objects.all()
+    serializer_class = WallCalibrationSerializer
 
 # Template Views
 class HomePageView(TemplateView):

@@ -61,6 +61,21 @@ services:
     #   db:
     #     condition: service_healthy
 
+  node_ws_server:
+    image: node:18-alpine
+    container_name: climber_node_ws_server
+    working_dir: /app
+    command: sh -c "npm install && node node_ws_server.js"
+    volumes:
+      - ./:/app/
+    ports:
+      - "8011:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    depends_on:
+      - web
+
   # nginx:
   #   build: ./nginx
   #   container_name: climber_nginx

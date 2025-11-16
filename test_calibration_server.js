@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+
+const http = require('http');
+
+// Create a simple HTTP server to serve calibration data
+const server = http.createServer((req, res) => {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'application/json');
+  
+  // Sample calibration data in the expected format
+  const calibrationData = {
+    "id": 11,
+    "uuid": "a3a4a9cc-c1f1-4f89-88f9-8032a741bef7",
+    "slug": null,
+    "deleted": false,
+    "created": "2025-11-16T18:13:07.238237+01:00",
+    "updated": "2025-11-16T18:13:08.614772+01:00",
+    "name": "Manual Point Calibration",
+    "description": "",
+    "calibration_type": "manual_points",
+    "camera_matrix": [
+      [1005, 0, 502.5],
+      [0, 1384, 692],
+      [0, 0, 1]
+    ],
+    "distortion_coeffs": [0, 0, 0, 0, 0],
+    "perspective_transform": [
+      [1.0690272178347564, -0.23464877452283756, -0.027618694778643094],
+      [-0.022645591316397172, 1.092140521192966, -0.09305621482605012],
+      [0.027204203026688387, -0.36870619774081764, 1]
+    ],
+    "aruco_markers": {},
+    "aruco_dictionary": "DICT_4X4_50",
+    "marker_size_meters": 0.1,
+    "manual_image_points": [
+      [0.18118952033973035, 0.15098663700857726],
+      [0.8465412015872648, 0.1617713967949042],
+      [0.8435708815816954, 0.653556443051413],
+      [0.2198036804121319, 0.6363008273932899]
+    ],
+    "manual_svg_points": [
+      [0.13763256213306105, 0.0713601282252304],
+      [0.8713016035086905, 0.0669001202111535],
+      [0.9217970436033694, 0.7693513824282653],
+      [0.0752558420161047, 0.7738113904423422]
+    ],
+    "calibration_image": "http://localhost:8001/media/wall_images/SCR-20251020-rnyz_iYN9ycp.jpeg",
+    "projection_error": 0,
+    "overlay_image": "http://localhost:8001/media/calibration_overlays/overlay_a3a4a9cc-c1f1-4f89-88f9-8032a741bef7.png",
+    "hand_extension_percent": 20,
+    "is_active": true,
+    "wall": 1
+  };
+  
+  res.end(JSON.stringify(calibrationData));
+});
+
+const PORT = 3000;
+server.listen(PORT, () => {
+  console.log(`Test calibration server running on http://localhost:${PORT}`);
+  console.log(`Use this URL: http://localhost:${PORT}/calibration.json`);
+});

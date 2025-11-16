@@ -1,0 +1,27 @@
+{
+  "name": "websocket-pose-detector",
+  "version": "1.0.0",
+  "description": "WebSocket-based pose detector for climbing hold tracking",
+  "main": "websocket_pose_detector.js",
+  "scripts": {
+    "start": "node websocket_pose_detector.js",
+    "session-tracker": "node websocket_pose_session_tracker.js",
+    "test": "node test_pose_detector.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "commander": "^11.0.0",
+    "fast-xml-parser": "^4.2.5",
+    "mathjs": "^11.11.0"
+  },
+  "keywords": [
+    "websocket",
+    "pose",
+    "climbing",
+    "mediapipe",
+    "svg",
+    "session-tracker"
+  ],
+  "author": "",
+  "license": "MIT"
+}

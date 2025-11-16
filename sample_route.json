@@ -1,0 +1,12 @@
+{
+  "grade": "5.10a",
+  "author": "John Doe",
+  "problem": {
+    "holds": [
+      {"id": "hold_1", "type": "start"},
+      {"id": "hold_5", "type": "normal"},
+      {"id": "hold_10", "type": "normal"},
+      {"id": "hold_15", "type": "finish"}
+    ]
+  }
+}

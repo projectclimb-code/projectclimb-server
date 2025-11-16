@@ -189,3 +189,7 @@ code/media/
 
 2025-11-13_pleza.jsons
 .envrc
+
+
+node_modules/
+.envrc

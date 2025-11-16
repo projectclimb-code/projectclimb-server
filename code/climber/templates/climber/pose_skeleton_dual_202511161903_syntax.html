@@ -25,6 +25,49 @@
         </div>
     </div>
     
+    <!-- Wall Selection and Calibration Settings -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Wall & Calibration Settings</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Wall Selection -->
+            <div>
+                <h3 class="text-lg font-medium mb-3 text-gray-700">Select Wall</h3>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <span class="text-gray-700 mr-2">Wall:</span>
+                        <select id="wall-select" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                            <option value="">Select a wall...</option>
+                        </select>
+                    </label>
+                    <button id="load-wall-btn"
+                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                            disabled>
+                        Load Wall
+                    </button>
+                </div>
+                <div id="wall-info" class="mt-2 text-sm text-gray-600"></div>
+            </div>
+            
+            <!-- Calibration Options -->
+            <div>
+                <h3 class="text-lg font-medium mb-3 text-gray-700">Calibration Options</h3>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="show-calibration-image" class="mr-2">
+                        <span class="text-gray-700">Show Calibration Image</span>
+                    </label>
+                    <label class="flex items-center">
+                        <span class="text-gray-700 mr-2">Opacity:</span>
+                        <input type="range" id="calibration-opacity" min="0" max="100" value="50"
+                               class="w-24" disabled>
+                        <span id="opacity-value" class="ml-2 text-gray-600">50%</span>
+                    </label>
+                </div>
+                <div id="calibration-info" class="mt-2 text-sm text-gray-600"></div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Connection Settings for Both WebSockets -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Connection Settings</h2>
@@ -288,6 +331,10 @@ class PoseSkeletonVisualizer {
         this.frameCount = 0;
         this.fps = 0;
         this.currentLandmarks = null;
+        
+        // Calibration image properties
+        this.calibrationImage = null;
+        this.calibrationOpacity = 0.5;
         
         // Store the original canvas and context for fullscreen mode
         this.originalCanvas = this.canvas;
@@ -611,11 +658,75 @@ class PoseSkeletonVisualizer {
         });
     }
     
-    drawPose() {
-        if (!this.currentLandmarks || this.currentLandmarks.length === 0) {
+    setCalibrationImage(image, opacity, transform) {
+        this.calibrationImage = image;
+        this.calibrationOpacity = opacity || 0.5;
+        this.calibrationTransform = transform;
+    }
+    
+    drawCalibrationImage() {
+        if (!this.calibrationImage || this.calibrationOpacity <= 0) {
             return;
         }
         
+        const container = this.canvas.parentElement;
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        
+        // Save context state
+        this.ctx.save();
+        
+        // Set global alpha for transparency
+        this.ctx.globalAlpha = this.calibrationOpacity;
+        
+        // Calculate scaling to fit the calibration image to canvas
+        const scale = Math.min(
+            width / this.calibrationImage.width,
+            height / this.calibrationImage.height
+        );
+        
+        const scaledWidth = this.calibrationImage.width * scale;
+        const scaledHeight = this.calibrationImage.height * scale;
+        
+        // Center the calibration image
+        const x = (width - scaledWidth) / 2;
+        const y = (height - scaledHeight) / 2;
+        
+        // Draw the calibration image
+        this.ctx.drawImage(
+            this.calibrationImage,
+            x, y, scaledWidth, scaledHeight
+        );
+        
+        // Restore context state
+        this.ctx.restore();
+    
+    calculatePerspectiveTransform(corners, imgWidth, imgHeight) {
+        // Calculate a simple transform that approximates the perspective
+        // This is a simplified version - full perspective transform would require more complex math
+        
+        const [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] = corners;
+        
+        // Calculate the transform parameters
+        const scaleX = (x2 - x1) / imgWidth;
+        const scaleY = (y4 - y1) / imgHeight;
+        const skewX = (y2 - y1) / imgWidth;
+        const skewY = (x4 - x1) / imgHeight;
+        const translateX = x1;
+        const translateY = y1;
+        
+        return {
+            a: scaleX,
+            b: skewX,
+            c: 0,
+            d: skewY,
+            e: scaleY,
+            f: translateX
+        };
+    }
+    
+    drawPose() {
         // Get the display dimensions (CSS pixels)
         const container = this.canvas.parentElement;
         const rect = container.getBoundingClientRect();
@@ -628,6 +739,13 @@ class PoseSkeletonVisualizer {
         
         // Clear canvas using actual canvas dimensions
         this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Draw calibration image first (as background)
+        this.drawCalibrationImage();
+        
+        if (!this.currentLandmarks || this.currentLandmarks.length === 0) {
+            return;
+        }
         
         // Scale landmarks to display size (CSS pixels)
         // The context is already scaled by device pixel ratio, so we use CSS dimensions
@@ -826,6 +944,79 @@ class CombinedPoseVisualizer {
         const canvasHeight = this.canvas.height;
         
         this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Draw calibration image for right pose if available
+        if (this.rightVisualizer.calibrationImage && this.rightVisualizer.calibrationOpacity > 0) {
+            this.ctx.save();
+            this.ctx.globalAlpha = this.rightVisualizer.calibrationOpacity;
+            
+            // Apply perspective transformation if available
+            if (this.rightVisualizer.calibrationTransform) {
+                // Create transformation matrix from calibration data
+                const transform = this.rightVisualizer.calibrationTransform;
+                
+                // Apply transformation to canvas context using transform method
+                if (transform && transform.length === 9) {
+                    const [a, b, c, d, e, f, g, h, i] = transform;
+                    
+                    // Define four corners of the source image (normalized coordinates 0-1)
+                    const srcCorners = [
+                        [0, 0, 1],     // top-left
+                        [1, 0, 1],     // top-right
+                        [1, 1, 1],     // bottom-right
+                        [0, 1, 1]      // bottom-left
+                    ];
+                    
+                    // Transform the corners using the perspective matrix
+                    const transformedCorners = srcCorners.map(([x, y, w]) => {
+                        const newX = a * x + b * y + c * w;
+                        const newY = d * x + e * y + f * w;
+                        const newW = g * x + h * y + i * w;
+                        return [newX / newW, newY / newW];
+                    });
+                    
+                    // Convert to canvas coordinates
+                    const canvasCorners = transformedCorners.map(([x, y]) => [x * width, y * height]);
+                    
+                    // Draw the transformed image using canvas path and clipping
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(canvasCorners[0][0], canvasCorners[0][1]);
+                    canvasCorners.forEach(([x, y]) => this.ctx.lineTo(x, y));
+                    this.ctx.closePath();
+                    this.ctx.clip();
+                    
+                    // Calculate the transformation needed to map the image to the transformed quadrilateral
+                    const scaleX = (canvasCorners[1][0] - canvasCorners[0][0]) / width;
+                    const scaleY = (canvasCorners[3][1] - canvasCorners[0][1]) / height;
+                    const skewX = (canvasCorners[1][1] - canvasCorners[0][1]) / width;
+                    const skewY = (canvasCorners[3][0] - canvasCorners[0][0]) / height;
+                    
+                    this.ctx.transform(scaleX, skewX, skewY, scaleY, canvasCorners[0][0], canvasCorners[0][1]);
+                    this.ctx.drawImage(this.rightVisualizer.calibrationImage, 0, 0, width, height);
+                }
+            }
+            
+            // Calculate scaling to fit calibration image to canvas
+            const scale = Math.min(
+                width / this.rightVisualizer.calibrationImage.width,
+                height / this.rightVisualizer.calibrationImage.height
+            );
+            
+            const scaledWidth = this.rightVisualizer.calibrationImage.width * scale;
+            const scaledHeight = this.rightVisualizer.calibrationImage.height * scale;
+            
+            // Center calibration image
+            const x = (width - scaledWidth) / 2;
+            const y = (height - scaledHeight) / 2;
+            
+            // Draw calibration image
+            this.ctx.drawImage(
+                this.rightVisualizer.calibrationImage,
+                x, y, scaledWidth, scaledHeight
+            );
+            
+            this.ctx.restore();
+        }
         
         // Draw left pose (blue)
         if (this.leftVisualizer.currentLandmarks) {
@@ -1066,6 +1257,33 @@ class ViewModeManager {
             // Clear canvas using actual canvas dimensions
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             
+            // Draw calibration image if available (only for right side)
+            if (side === 'right' && visualizer.calibrationImage && visualizer.calibrationOpacity > 0) {
+                ctx.save();
+                ctx.globalAlpha = visualizer.calibrationOpacity;
+                
+                // Calculate scaling to fit the calibration image to canvas
+                const scale = Math.min(
+                    width / visualizer.calibrationImage.width,
+                    height / visualizer.calibrationImage.height
+                );
+                
+                const scaledWidth = visualizer.calibrationImage.width * scale;
+                const scaledHeight = visualizer.calibrationImage.height * scale;
+                
+                // Center the calibration image
+                const x = (width - scaledWidth) / 2;
+                const y = (height - scaledHeight) / 2;
+                
+                // Draw the calibration image
+                ctx.drawImage(
+                    visualizer.calibrationImage,
+                    x, y, scaledWidth, scaledHeight
+                );
+                
+                ctx.restore();
+            }
+            
             // Draw pose if available
             if (visualizer.currentLandmarks && visualizer.currentLandmarks.length > 0) {
                 // Scale landmarks to display size (CSS pixels)
@@ -1163,11 +1381,170 @@ class ViewModeManager {
     }
 }
 
+// Wall and Calibration Management
+class WallCalibrationManager {
+    constructor() {
+        this.walls = [];
+        this.selectedWall = null;
+        this.calibrationData = null;
+        this.calibrationImage = null;
+        this.showCalibrationImage = false;
+        this.calibrationOpacity = 0.5;
+        
+        this.initializeElements();
+        this.loadWalls();
+        this.setupEventListeners();
+    }
+    
+    initializeElements() {
+        this.wallSelect = document.getElementById('wall-select');
+        this.loadWallBtn = document.getElementById('load-wall-btn');
+        this.wallInfo = document.getElementById('wall-info');
+        this.showCalibrationCheckbox = document.getElementById('show-calibration-image');
+        this.opacitySlider = document.getElementById('calibration-opacity');
+        this.opacityValue = document.getElementById('opacity-value');
+        this.calibrationInfo = document.getElementById('calibration-info');
+    }
+    
+    setupEventListeners() {
+        this.wallSelect.addEventListener('change', () => {
+            const wallId = this.wallSelect.value;
+            this.loadWallBtn.disabled = !wallId;
+            if (wallId) {
+                this.selectedWall = this.walls.find(w => w.id == wallId);
+                this.updateWallInfo();
+            } else {
+                this.selectedWall = null;
+                this.wallInfo.textContent = '';
+            }
+        });
+        
+        this.loadWallBtn.addEventListener('click', () => {
+            if (this.selectedWall) {
+                this.loadCalibrationData();
+            }
+        });
+        
+        this.showCalibrationCheckbox.addEventListener('change', () => {
+            this.showCalibrationImage = this.showCalibrationCheckbox.checked;
+            this.opacitySlider.disabled = !this.showCalibrationImage;
+            this.updateCalibrationDisplay();
+        });
+        
+        this.opacitySlider.addEventListener('input', () => {
+            this.calibrationOpacity = this.opacitySlider.value / 100;
+            this.opacityValue.textContent = `${this.opacitySlider.value}%`;
+            this.updateCalibrationDisplay();
+        });
+    }
+    
+    async loadWalls() {
+        try {
+            const response = await fetch('/api/walls/');
+            if (response.ok) {
+                const data = await response.json();
+                this.walls = data.results || data;
+                this.populateWallSelect();
+            } else {
+                console.error('Failed to load walls:', response.statusText);
+                this.wallInfo.textContent = 'Failed to load walls';
+            }
+        } catch (error) {
+            console.error('Error loading walls:', error);
+            this.wallInfo.textContent = 'Error loading walls';
+        }
+    }
+    
+    populateWallSelect() {
+        this.wallSelect.innerHTML = '<option value="">Select a wall...</option>';
+        this.walls.forEach(wall => {
+            const option = document.createElement('option');
+            option.value = wall.id;
+            option.textContent = wall.name;
+            this.wallSelect.appendChild(option);
+        });
+    }
+    
+    updateWallInfo() {
+        if (this.selectedWall) {
+            this.wallInfo.textContent = `Venue: ${this.selectedWall.venue?.name || 'Unknown'}`;
+        } else {
+            this.wallInfo.textContent = '';
+        }
+    }
+    
+    async loadCalibrationData() {
+        if (!this.selectedWall) return;
+        
+        try {
+            this.wallInfo.textContent = 'Loading calibration data...';
+            
+            // Load calibrated SVG data which includes calibration image info
+            const response = await fetch(`/calibration/wall/${this.selectedWall.id}/svg-data/`);
+            if (response.ok) {
+                this.calibrationData = await response.json();
+                this.loadCalibrationImage();
+                this.calibrationInfo.textContent = `Calibration: ${this.calibrationData.calibration?.name || 'None'}`;
+            } else {
+                console.error('Failed to load calibration data:', response.statusText);
+                this.calibrationInfo.textContent = 'No calibration data available';
+            }
+        } catch (error) {
+            console.error('Error loading calibration data:', error);
+            this.calibrationInfo.textContent = 'Error loading calibration data';
+        }
+    }
+    
+    loadCalibrationImage() {
+        if (!this.calibrationData) {
+            this.wallInfo.textContent = 'No calibration data available';
+            return;
+        }
+        
+        // Use overlay_image if available, otherwise fall back to wall_image_url
+        const imageUrl = this.calibrationData.overlay_image || this.calibrationData.wall_image_url;
+        
+        if (!imageUrl) {
+            this.wallInfo.textContent = 'No calibration image available';
+            return;
+        }
+        
+        this.calibrationImage = new Image();
+        this.calibrationImage.crossOrigin = 'anonymous';
+        this.calibrationImage.onload = () => {
+            this.wallInfo.textContent = 'Wall and calibration loaded successfully';
+            this.updateCalibrationDisplay();
+        };
+        this.calibrationImage.onerror = () => {
+            this.wallInfo.textContent = 'Failed to load calibration image';
+        };
+        this.calibrationImage.src = imageUrl;
+        
+        // Store calibration transformation matrix
+        this.calibrationTransform = this.calibrationData.calibration?.perspective_transform;
+    }
+    
+    updateCalibrationDisplay() {
+        // This will be called by right visualizer to draw calibration image
+        if (window.rightVisualizer) {
+            window.rightVisualizer.setCalibrationImage(
+                this.showCalibrationImage ? this.calibrationImage : null,
+                this.calibrationOpacity,
+                this.calibrationTransform
+            );
+        }
+    }
+}
+
 // Initialize the visualizers when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     const leftVisualizer = new PoseSkeletonVisualizer('left');
     const rightVisualizer = new PoseSkeletonVisualizer('right');
     const viewModeManager = new ViewModeManager(leftVisualizer, rightVisualizer);
+    const wallCalibrationManager = new WallCalibrationManager();
+    
+    // Make right visualizer available globally for calibration manager
+    window.rightVisualizer = rightVisualizer;
 });
 </script>
 {% endblock extra_js %}

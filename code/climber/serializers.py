@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame
+from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame, WallCalibration
 
 class GroupSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,3 +48,8 @@ class SessionFrameSerializer(serializers.ModelSerializer):
     class Meta:
         model = SessionFrame
         fields = ['timestamp', 'frame_number', 'pose_data', 'image_path']
+
+class WallCalibrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WallCalibration
+        fields = '__all__'

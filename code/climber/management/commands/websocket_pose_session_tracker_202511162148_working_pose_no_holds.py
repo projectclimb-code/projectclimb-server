@@ -279,8 +279,7 @@ class SVGHoldDetector:
     """Detects hold touches based on hand proximity to SVG paths"""
     
     def __init__(self, svg_parser, proximity_threshold: float = 50.0,
-                 touch_duration: float = 2.0, route_holds=None,
-                 video_aspect_ratio=(4, 3), svg_aspect_ratio=None):
+                 touch_duration: float = 2.0, route_holds=None):
         """
         Initialize SVG hold detector
         
@@ -289,31 +288,11 @@ class SVGHoldDetector:
             proximity_threshold: Distance in pixels to consider hand near hold
             touch_duration: Time in seconds hand must be near hold to count as touch
             route_holds: Dictionary mapping hold_id -> hold_type for route filtering
-            video_aspect_ratio: Tuple of (width, height) for video aspect ratio
-            svg_aspect_ratio: Tuple of (width, height) for SVG aspect ratio (auto-detected if None)
         """
         self.svg_parser = svg_parser
         self.proximity_threshold = proximity_threshold
         self.touch_duration = touch_duration
         self.route_holds = route_holds
-        self.video_aspect_ratio = video_aspect_ratio
-        
-        # Get SVG dimensions and calculate aspect ratio
-        if svg_aspect_ratio is None:
-            svg_width, svg_height = svg_parser.get_svg_dimensions()
-            self.svg_aspect_ratio = (svg_width, svg_height)
-        else:
-            self.svg_aspect_ratio = svg_aspect_ratio
-            
-        # Calculate scaling factors to handle different aspect ratios
-        # Video is scaled to fill height, SVG is scaled to fill height
-        # This means we need to account for horizontal scaling differences
-        video_width, video_height = video_aspect_ratio
-        svg_width, svg_height = self.svg_aspect_ratio
-        
-        # Calculate the scaling factor for horizontal dimension
-        # when both video and SVG are scaled to fill the same height
-        self.horizontal_scale_factor = (video_width / video_height) / (svg_width / svg_height)
         
         # Extract hold paths from SVG
         self.hold_paths = svg_parser.extract_paths()
@@ -374,27 +353,21 @@ class SVGHoldDetector:
         current_time = time.time()
         status_changes = {}
         
-        # Check each hold for hand contact
-        for hold_id, hold_path_data in self.hold_paths.items():
-            # Skip if not in route holds (if filtering is enabled)
-            if self.route_holds and hold_id not in self.route_holds:
-                continue
-                
-            # Check if either hand is touching the hold
-            left_touching = False
-            right_touching = False
+        # Check each hold for proximity to hands
+        for hold_id, hold_center in self.hold_centers.items():
+            # Calculate distances
+            left_dist = self._distance(left_hand_pos, hold_center) if left_hand_pos else float('inf')
+            right_dist = self._distance(right_hand_pos, hold_center) if right_hand_pos else float('inf')
+            min_dist = min(left_dist, right_dist)
             
-            if left_hand_pos:
-                left_touching = self._is_hand_touching_hold(left_hand_pos, hold_path_data)
+            is_near_left = left_hand_pos and left_dist < self.proximity_threshold
+            is_near_right = right_hand_pos and right_dist < self.proximity_threshold
+            is_near_any_hand = is_near_left or is_near_right
             
-            if right_hand_pos:
-                right_touching = self._is_hand_touching_hold(right_hand_pos, hold_path_data)
-            
-            is_touching = left_touching or right_touching
             current_status = self.hold_status.get(hold_id, 'untouched')
             
-            if is_touching:
-                # Hand is touching the hold
+            if is_near_any_hand:
+                # Hand is near the hold
                 if hold_id not in self.hold_touch_start_times:
                     # Just started touching this hold
                     self.hold_touch_start_times[hold_id] = current_time
@@ -407,7 +380,7 @@ class SVGHoldDetector:
                         self.touched_holds.add(hold_id)
                         logger.info(f"Hold {hold_id} completed after {self.touch_duration}s touch")
             else:
-                # Hand is not touching the hold
+                # Hand is not near the hold
                 if hold_id in self.hold_touch_start_times:
                     # Was touching but now stopped
                     del self.hold_touch_start_times[hold_id]
@@ -432,23 +405,14 @@ class SVGHoldDetector:
         return touched_paths
     
     def _get_hand_position(self, landmarks: List[Dict], hand_indices: List[int]) -> Optional[Tuple[float, float]]:
-        """Get average position of hand landmarks with aspect ratio correction"""
+        """Get average position of hand landmarks"""
         hand_positions = []
         
         for idx in hand_indices:
             if idx < len(landmarks):
                 landmark = landmarks[idx]
                 if landmark.get('visibility', 0) > 0.5:  # Only use visible landmarks
-                    # Apply horizontal scaling to account for aspect ratio differences
-                    # The landmarks are already transformed by homography, but we need
-                    # to account for the different aspect ratios between video and SVG
-                    x = landmark['x']
-                    y = landmark['y']
-                    
-                    # Apply horizontal scaling to match SVG coordinate system
-                    # This assumes the SVG is centered when displayed with different aspect ratio
-                    scaled_x = x * self.horizontal_scale_factor
-                    hand_positions.append((scaled_x, y))
+                    hand_positions.append((landmark['x'], landmark['y']))
         
         if hand_positions:
             # Return average position
@@ -457,37 +421,6 @@ class SVGHoldDetector:
             return (avg_x, avg_y)
         
         return None
-    
-    def _is_hand_touching_hold(self, hand_pos: Tuple[float, float], hold_path_data: Dict) -> bool:
-        """
-        Check if hand position is touching the hold by testing if point is inside the SVG path
-        
-        Args:
-            hand_pos: (x, y) coordinates of hand position
-            hold_path_data: Dictionary containing hold path data
-            
-        Returns:
-            True if hand is touching the hold, False otherwise
-        """
-        if not hand_pos:
-            return False
-            
-        # First check if hand is within proximity threshold (faster check)
-        hold_id = hold_path_data['id']
-        if hold_id in self.hold_centers:
-            center = self.hold_centers[hold_id]
-            distance = self._distance(hand_pos, center)
-            if distance > self.proximity_threshold:
-                return False
-        
-        # Then check if hand is actually inside the SVG path
-        try:
-            path_d = hold_path_data['d']
-            return self.svg_parser.point_in_path(hand_pos, path_d)
-        except Exception as e:
-            logger.warning(f"Error checking if hand is inside path for hold {hold_id}: {e}")
-            # Fallback to distance-based detection
-            return distance <= self.proximity_threshold
     
     def _distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
         """Calculate Euclidean distance between two points"""

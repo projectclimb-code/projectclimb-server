@@ -11,7 +11,7 @@ from .views import (
     RouteListView, RouteDetailView, RouteCreateView, RouteUpdateView, RouteDeleteView,
     CameraView, video_feed, capture_frame, PoseRealtimeView, PoseSkeletonView, PoseSkeletonDualView, PhoneCameraView, WebSocketRelayTestView,
     SessionListView, SessionDetailView, SessionDeleteView, SessionReplayView,
-    SessionRecordingViewSet,
+    SessionRecordingViewSet, WallCalibrationViewSet,
     TaskManagementView, trigger_fake_session_task, get_task_status,
     wall_upload_svg, wall_upload_image, wall_capture_camera_image,
     WallAnimationView, DemoView, api_upload_wall_image,
@@ -33,6 +33,7 @@ router.register(r'holds', HoldViewSet)
 router.register(r'routes', RouteViewSet)
 router.register(r'sessions', SessionViewSet)
 router.register(r'session-recordings', SessionRecordingViewSet)
+router.register(r'wall-calibrations', WallCalibrationViewSet)
 
 urlpatterns = [
     path('', HomePageView.as_view(), name='home'),  # New home page
