@@ -25,49 +25,6 @@
         </div>
     </div>
     
-    <!-- Wall Selection and Calibration Settings -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Wall & Calibration Settings</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Wall Selection -->
-            <div>
-                <h3 class="text-lg font-medium mb-3 text-gray-700">Select Wall</h3>
-                <div class="flex items-center space-x-4">
-                    <label class="flex items-center">
-                        <span class="text-gray-700 mr-2">Wall:</span>
-                        <select id="wall-select" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                            <option value="">Select a wall...</option>
-                        </select>
-                    </label>
-                    <button id="load-wall-btn"
-                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                            disabled>
-                        Load Wall
-                    </button>
-                </div>
-                <div id="wall-info" class="mt-2 text-sm text-gray-600"></div>
-            </div>
-            
-            <!-- Calibration Options -->
-            <div>
-                <h3 class="text-lg font-medium mb-3 text-gray-700">Calibration Options</h3>
-                <div class="flex items-center space-x-4">
-                    <label class="flex items-center">
-                        <input type="checkbox" id="show-calibration-image" class="mr-2">
-                        <span class="text-gray-700">Show Calibration Image</span>
-                    </label>
-                    <label class="flex items-center">
-                        <span class="text-gray-700 mr-2">Opacity:</span>
-                        <input type="range" id="calibration-opacity" min="0" max="100" value="50"
-                               class="w-24" disabled>
-                        <span id="opacity-value" class="ml-2 text-gray-600">50%</span>
-                    </label>
-                </div>
-                <div id="calibration-info" class="mt-2 text-sm text-gray-600"></div>
-            </div>
-        </div>
-    </div>
-    
     <!-- Connection Settings for Both WebSockets -->
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Connection Settings</h2>
@@ -105,7 +62,45 @@
             </div>
         </div>
     </div>
-
+    
+    <!-- Wall Selection and SVG Overlay Settings -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Wall Settings</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Wall Selection -->
+            <div>
+                <h3 class="text-lg font-medium mb-3 text-gray-700">Select Wall</h3>
+                <div class="flex items-center space-x-4">
+                    <select id="wall-select" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 flex-1">
+                        <option value="">Loading walls...</option>
+                    </select>
+                    <button id="load-wall-btn"
+                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
+                        Load Wall
+                    </button>
+                </div>
+                <div id="wall-status" class="mt-2 text-sm text-gray-600"></div>
+            </div>
+            
+            <!-- SVG Overlay Settings -->
+            <div>
+                <h3 class="text-lg font-medium mb-3 text-gray-700">SVG Overlay (Right Side)</h3>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="show-svg-overlay" class="mr-2">
+                        <span class="text-gray-700">Show SVG Overlay</span>
+                    </label>
+                    <div id="svg-opacity-control" class="flex items-center space-x-2 hidden">
+                        <span class="text-gray-700">Opacity:</span>
+                        <input type="range" id="svg-opacity" min="0" max="100" value="50"
+                               class="w-24">
+                        <span id="svg-opacity-value" class="text-gray-600">50%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Side-by-Side Visualizations -->
     <div id="side-by-side-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <!-- Left Visualization -->
@@ -150,11 +145,15 @@
             <div class="relative bg-black rounded-lg" style="height: 500px;">
                 <canvas id="pose-canvas-right" class="w-full h-full rounded-lg"></canvas>
                 
+                <!-- SVG Overlay Canvas (hidden by default) -->
+                <canvas id="svg-overlay-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none rounded-lg" style="display: none;"></canvas>
+                
                 <!-- Controls overlay -->
                 <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
                     <div class="text-white text-sm mb-2">
                         <div>FPS: <span id="fps-counter-right">0</span></div>
                         <div>Landmarks: <span id="landmark-count-right">0</span></div>
+                        <div id="wall-info-right" class="hidden">Wall: <span id="wall-name-right"></span></div>
                     </div>
                 </div>
                 
@@ -190,6 +189,9 @@
         <div class="relative bg-black rounded-lg" style="height: 600px;">
             <canvas id="pose-canvas-combined" class="w-full h-full rounded-lg"></canvas>
             
+            <!-- SVG Overlay Canvas for combined view (hidden by default) -->
+            <canvas id="svg-overlay-canvas-combined" class="absolute top-0 left-0 w-full h-full pointer-events-none rounded-lg" style="display: none;"></canvas>
+            
             <!-- Controls overlay -->
             <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
                 <div class="text-white text-sm mb-2">
@@ -197,6 +199,7 @@
                     <div>Left Landmarks: <span id="landmark-count-left-combined">0</span></div>
                     <div>Right FPS: <span id="fps-counter-right-combined">0</span></div>
                     <div>Right Landmarks: <span id="landmark-count-right-combined">0</span></div>
+                    <div id="wall-info-combined" class="hidden">Wall: <span id="wall-name-combined"></span></div>
                 </div>
             </div>
             
@@ -256,11 +259,15 @@
         <div class="relative bg-black rounded-lg" style="height: 70vh;">
             <canvas id="pose-canvas-right-fullscreen" class="w-full h-full rounded-lg"></canvas>
             
+            <!-- SVG Overlay Canvas for fullscreen right view (hidden by default) -->
+            <canvas id="svg-overlay-canvas-right-fullscreen" class="absolute top-0 left-0 w-full h-full pointer-events-none rounded-lg" style="display: none;"></canvas>
+            
             <!-- Controls overlay -->
             <div class="absolute top-4 left-4 bg-gray-800 bg-opacity-75 p-3 rounded-lg">
                 <div class="text-white text-sm mb-2">
                     <div>FPS: <span id="fps-counter-right-fullscreen">0</span></div>
                     <div>Landmarks: <span id="landmark-count-right-fullscreen">0</span></div>
+                    <div id="wall-info-right-fullscreen" class="hidden">Wall: <span id="wall-name-right-fullscreen"></span></div>
                 </div>
             </div>
             
@@ -276,7 +283,10 @@
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Instructions</h2>
         <div class="text-gray-600 space-y-2">
             <p>1. Connect to two WebSockets that stream pose data in JSON format.</p>
-            <p>2. The right visualization supports the new format from websocket_pose_session_tracker.py:</p>
+            <p>2. Select a wall from the dropdown and click "Load Wall" to enable SVG overlay functionality.</p>
+            <p>3. Toggle "Show SVG Overlay" to display the transformed wall SVG on the right visualization.</p>
+            <p>4. Adjust the opacity slider to control the transparency of the SVG overlay.</p>
+            <p>5. The right visualization supports the new format from websocket_pose_session_tracker.py:</p>
             <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
 {
   "session": {
@@ -294,7 +304,7 @@
   ]
 }
             </pre>
-            <p>3. The left visualization still supports the original format:</p>
+            <p>6. The left visualization still supports the original format:</p>
             <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
 {
   "landmarks": [
@@ -305,14 +315,15 @@
   "timestamp": 1234567890
 }
             </pre>
-            <p>4. Choose your view mode:</p>
+            <p>7. Choose your view mode:</p>
             <ul class="list-disc pl-6 space-y-1">
                 <li><strong>Side by Side:</strong> View both poses in separate canvases</li>
                 <li><strong>Combined View:</strong> View both poses overlaid on a single canvas (left pose in blue, right pose in green)</li>
                 <li><strong>Fullscreen:</strong> View a single pose in fullscreen mode</li>
             </ul>
-            <p>5. In combined view, left pose is rendered in blue and right pose in green for easy differentiation.</p>
-            <p>6. The right visualization will display session information including completed holds when using the new format.</p>
+            <p>8. In combined view, left pose is rendered in blue and right pose in green for easy differentiation.</p>
+            <p>9. The SVG overlay will be transformed using the wall's active calibration matrix to align with the pose data.</p>
+            <p>10. The right visualization will display session information including completed holds when using the new format.</p>
         </div>
     </div>
 </div>
@@ -331,10 +342,6 @@ class PoseSkeletonVisualizer {
         this.frameCount = 0;
         this.fps = 0;
         this.currentLandmarks = null;
-        
-        // Calibration image properties
-        this.calibrationImage = null;
-        this.calibrationOpacity = 0.5;
         
         // Store the original canvas and context for fullscreen mode
         this.originalCanvas = this.canvas;
@@ -658,75 +665,11 @@ class PoseSkeletonVisualizer {
         });
     }
     
-    setCalibrationImage(image, opacity, transform) {
-        this.calibrationImage = image;
-        this.calibrationOpacity = opacity || 0.5;
-        this.calibrationTransform = transform;
-    }
-    
-    drawCalibrationImage() {
-        if (!this.calibrationImage || this.calibrationOpacity <= 0) {
+    drawPose() {
+        if (!this.currentLandmarks || this.currentLandmarks.length === 0) {
             return;
         }
         
-        const container = this.canvas.parentElement;
-        const rect = container.getBoundingClientRect();
-        const width = rect.width;
-        const height = rect.height;
-        
-        // Save context state
-        this.ctx.save();
-        
-        // Set global alpha for transparency
-        this.ctx.globalAlpha = this.calibrationOpacity;
-        
-        // Calculate scaling to fit the calibration image to canvas
-        const scale = Math.min(
-            width / this.calibrationImage.width,
-            height / this.calibrationImage.height
-        );
-        
-        const scaledWidth = this.calibrationImage.width * scale;
-        const scaledHeight = this.calibrationImage.height * scale;
-        
-        // Center the calibration image
-        const x = (width - scaledWidth) / 2;
-        const y = (height - scaledHeight) / 2;
-        
-        // Draw the calibration image
-        this.ctx.drawImage(
-            this.calibrationImage,
-            x, y, scaledWidth, scaledHeight
-        );
-        
-        // Restore context state
-        this.ctx.restore();
-    
-    calculatePerspectiveTransform(corners, imgWidth, imgHeight) {
-        // Calculate a simple transform that approximates the perspective
-        // This is a simplified version - full perspective transform would require more complex math
-        
-        const [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] = corners;
-        
-        // Calculate the transform parameters
-        const scaleX = (x2 - x1) / imgWidth;
-        const scaleY = (y4 - y1) / imgHeight;
-        const skewX = (y2 - y1) / imgWidth;
-        const skewY = (x4 - x1) / imgHeight;
-        const translateX = x1;
-        const translateY = y1;
-        
-        return {
-            a: scaleX,
-            b: skewX,
-            c: 0,
-            d: skewY,
-            e: scaleY,
-            f: translateX
-        };
-    }
-    
-    drawPose() {
         // Get the display dimensions (CSS pixels)
         const container = this.canvas.parentElement;
         const rect = container.getBoundingClientRect();
@@ -739,13 +682,6 @@ class PoseSkeletonVisualizer {
         
         // Clear canvas using actual canvas dimensions
         this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-        
-        // Draw calibration image first (as background)
-        this.drawCalibrationImage();
-        
-        if (!this.currentLandmarks || this.currentLandmarks.length === 0) {
-            return;
-        }
         
         // Scale landmarks to display size (CSS pixels)
         // The context is already scaled by device pixel ratio, so we use CSS dimensions
@@ -945,79 +881,6 @@ class CombinedPoseVisualizer {
         
         this.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         
-        // Draw calibration image for right pose if available
-        if (this.rightVisualizer.calibrationImage && this.rightVisualizer.calibrationOpacity > 0) {
-            this.ctx.save();
-            this.ctx.globalAlpha = this.rightVisualizer.calibrationOpacity;
-            
-            // Apply perspective transformation if available
-            if (this.rightVisualizer.calibrationTransform) {
-                // Create transformation matrix from calibration data
-                const transform = this.rightVisualizer.calibrationTransform;
-                
-                // Apply transformation to canvas context using transform method
-                if (transform && transform.length === 9) {
-                    const [a, b, c, d, e, f, g, h, i] = transform;
-                    
-                    // Define four corners of the source image (normalized coordinates 0-1)
-                    const srcCorners = [
-                        [0, 0, 1],     // top-left
-                        [1, 0, 1],     // top-right
-                        [1, 1, 1],     // bottom-right
-                        [0, 1, 1]      // bottom-left
-                    ];
-                    
-                    // Transform the corners using the perspective matrix
-                    const transformedCorners = srcCorners.map(([x, y, w]) => {
-                        const newX = a * x + b * y + c * w;
-                        const newY = d * x + e * y + f * w;
-                        const newW = g * x + h * y + i * w;
-                        return [newX / newW, newY / newW];
-                    });
-                    
-                    // Convert to canvas coordinates
-                    const canvasCorners = transformedCorners.map(([x, y]) => [x * width, y * height]);
-                    
-                    // Draw the transformed image using canvas path and clipping
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(canvasCorners[0][0], canvasCorners[0][1]);
-                    canvasCorners.forEach(([x, y]) => this.ctx.lineTo(x, y));
-                    this.ctx.closePath();
-                    this.ctx.clip();
-                    
-                    // Calculate the transformation needed to map the image to the transformed quadrilateral
-                    const scaleX = (canvasCorners[1][0] - canvasCorners[0][0]) / width;
-                    const scaleY = (canvasCorners[3][1] - canvasCorners[0][1]) / height;
-                    const skewX = (canvasCorners[1][1] - canvasCorners[0][1]) / width;
-                    const skewY = (canvasCorners[3][0] - canvasCorners[0][0]) / height;
-                    
-                    this.ctx.transform(scaleX, skewX, skewY, scaleY, canvasCorners[0][0], canvasCorners[0][1]);
-                    this.ctx.drawImage(this.rightVisualizer.calibrationImage, 0, 0, width, height);
-                }
-            }
-            
-            // Calculate scaling to fit calibration image to canvas
-            const scale = Math.min(
-                width / this.rightVisualizer.calibrationImage.width,
-                height / this.rightVisualizer.calibrationImage.height
-            );
-            
-            const scaledWidth = this.rightVisualizer.calibrationImage.width * scale;
-            const scaledHeight = this.rightVisualizer.calibrationImage.height * scale;
-            
-            // Center calibration image
-            const x = (width - scaledWidth) / 2;
-            const y = (height - scaledHeight) / 2;
-            
-            // Draw calibration image
-            this.ctx.drawImage(
-                this.rightVisualizer.calibrationImage,
-                x, y, scaledWidth, scaledHeight
-            );
-            
-            this.ctx.restore();
-        }
-        
         // Draw left pose (blue)
         if (this.leftVisualizer.currentLandmarks) {
             this.drawPose(this.leftVisualizer.currentLandmarks, 'left');
@@ -1038,8 +901,13 @@ class ViewModeManager {
         this.rightVisualizer = rightVisualizer;
         this.combinedVisualizer = null;
         this.currentMode = 'side-by-side';
+        this.wallSVGManager = null;
         
         this.setupEventListeners();
+    }
+    
+    setWallSVGManager(wallSVGManager) {
+        this.wallSVGManager = wallSVGManager;
     }
     
     setupEventListeners() {
@@ -1092,6 +960,11 @@ class ViewModeManager {
         // Show side-by-side container
         document.getElementById('side-by-side-container').classList.remove('hidden');
         
+        // Redraw SVG overlay if needed
+        if (this.wallSVGManager && this.wallSVGManager.showOverlay) {
+            setTimeout(() => this.wallSVGManager.drawSVGOverlay(), 100);
+        }
+        
         // Update button styles
         this.updateButtonStyles('side-by-side');
     }
@@ -1110,6 +983,11 @@ class ViewModeManager {
         // Initialize combined visualizer if not already done
         if (!this.combinedVisualizer) {
             this.combinedVisualizer = new CombinedPoseVisualizer(this.leftVisualizer, this.rightVisualizer);
+        }
+        
+        // Redraw SVG overlay if needed
+        if (this.wallSVGManager && this.wallSVGManager.showOverlay) {
+            setTimeout(() => this.wallSVGManager.drawSVGOverlay(), 100);
         }
         
         // Update button styles
@@ -1153,6 +1031,11 @@ class ViewModeManager {
         
         // Enter true fullscreen mode
         this.enterFullscreen('fullscreen-right-container');
+        
+        // Redraw SVG overlay if needed
+        if (this.wallSVGManager && this.wallSVGManager.showOverlay) {
+            setTimeout(() => this.wallSVGManager.drawSVGOverlay(), 100);
+        }
         
         // Update button styles
         this.updateButtonStyles('fullscreen-right');
@@ -1257,33 +1140,6 @@ class ViewModeManager {
             // Clear canvas using actual canvas dimensions
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             
-            // Draw calibration image if available (only for right side)
-            if (side === 'right' && visualizer.calibrationImage && visualizer.calibrationOpacity > 0) {
-                ctx.save();
-                ctx.globalAlpha = visualizer.calibrationOpacity;
-                
-                // Calculate scaling to fit the calibration image to canvas
-                const scale = Math.min(
-                    width / visualizer.calibrationImage.width,
-                    height / visualizer.calibrationImage.height
-                );
-                
-                const scaledWidth = visualizer.calibrationImage.width * scale;
-                const scaledHeight = visualizer.calibrationImage.height * scale;
-                
-                // Center the calibration image
-                const x = (width - scaledWidth) / 2;
-                const y = (height - scaledHeight) / 2;
-                
-                // Draw the calibration image
-                ctx.drawImage(
-                    visualizer.calibrationImage,
-                    x, y, scaledWidth, scaledHeight
-                );
-                
-                ctx.restore();
-            }
-            
             // Draw pose if available
             if (visualizer.currentLandmarks && visualizer.currentLandmarks.length > 0) {
                 // Scale landmarks to display size (CSS pixels)
@@ -1381,158 +1237,414 @@ class ViewModeManager {
     }
 }
 
-// Wall and Calibration Management
-class WallCalibrationManager {
+// Wall and SVG Overlay Management
+class WallSVGManager {
     constructor() {
         this.walls = [];
         this.selectedWall = null;
-        this.calibrationData = null;
-        this.calibrationImage = null;
-        this.showCalibrationImage = false;
-        this.calibrationOpacity = 0.5;
+        this.svgData = null;
+        this.calibrationMatrix = null;
+        this.showOverlay = false;
+        this.opacity = 0.5;
         
-        this.initializeElements();
         this.loadWalls();
         this.setupEventListeners();
     }
     
-    initializeElements() {
-        this.wallSelect = document.getElementById('wall-select');
-        this.loadWallBtn = document.getElementById('load-wall-btn');
-        this.wallInfo = document.getElementById('wall-info');
-        this.showCalibrationCheckbox = document.getElementById('show-calibration-image');
-        this.opacitySlider = document.getElementById('calibration-opacity');
-        this.opacityValue = document.getElementById('opacity-value');
-        this.calibrationInfo = document.getElementById('calibration-info');
+    async loadWalls() {
+        try {
+            // Fetch walls from API
+            const response = await fetch('/api/walls/');
+            if (!response.ok) {
+                throw new Error('Failed to fetch walls');
+            }
+            
+            const data = await response.json();
+            this.walls = data.results || data;
+            
+            // Populate wall select dropdown
+            const wallSelect = document.getElementById('wall-select');
+            wallSelect.innerHTML = '<option value="">Select a wall...</option>';
+            
+            this.walls.forEach(wall => {
+                const option = document.createElement('option');
+                option.value = wall.id;
+                option.textContent = wall.name;
+                wallSelect.appendChild(option);
+            });
+            
+        } catch (error) {
+            console.error('Error loading walls:', error);
+            document.getElementById('wall-status').textContent = 'Error loading walls';
+        }
+    }
+    
+    async loadWall(wallId) {
+        if (!wallId) {
+            this.selectedWall = null;
+            this.svgData = null;
+            this.calibrationMatrix = null;
+            this.updateWallStatus('No wall selected');
+            return;
+        }
+        
+        try {
+            // Find wall in cached data
+            this.selectedWall = this.walls.find(w => w.id == wallId);
+            
+            if (!this.selectedWall) {
+                throw new Error('Wall not found');
+            }
+            
+            // Load calibrated SVG data
+            const response = await fetch(`/calibration/wall/${wallId}/svg-data/`);
+            if (!response.ok) {
+                throw new Error('Failed to load wall calibration data');
+            }
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'No calibration data available');
+            }
+            
+            this.svgData = data;
+            this.calibrationMatrix = data.calibration.perspective_transform;
+            
+            // Update wall info displays
+            this.updateWallInfo(this.selectedWall.name);
+            this.updateWallStatus(`Loaded: ${this.selectedWall.name}`);
+            
+            // If overlay is enabled, redraw it
+            if (this.showOverlay) {
+                this.drawSVGOverlay();
+            }
+            
+        } catch (error) {
+            console.error('Error loading wall:', error);
+            this.updateWallStatus(`Error: ${error.message}`);
+            this.selectedWall = null;
+            this.svgData = null;
+            this.calibrationMatrix = null;
+        }
     }
     
     setupEventListeners() {
-        this.wallSelect.addEventListener('change', () => {
-            const wallId = this.wallSelect.value;
-            this.loadWallBtn.disabled = !wallId;
-            if (wallId) {
-                this.selectedWall = this.walls.find(w => w.id == wallId);
-                this.updateWallInfo();
-            } else {
-                this.selectedWall = null;
-                this.wallInfo.textContent = '';
-            }
+        // Load wall button
+        document.getElementById('load-wall-btn').addEventListener('click', () => {
+            const wallId = document.getElementById('wall-select').value;
+            this.loadWall(wallId);
         });
         
-        this.loadWallBtn.addEventListener('click', () => {
-            if (this.selectedWall) {
-                this.loadCalibrationData();
-            }
-        });
-        
-        this.showCalibrationCheckbox.addEventListener('change', () => {
-            this.showCalibrationImage = this.showCalibrationCheckbox.checked;
-            this.opacitySlider.disabled = !this.showCalibrationImage;
-            this.updateCalibrationDisplay();
-        });
-        
-        this.opacitySlider.addEventListener('input', () => {
-            this.calibrationOpacity = this.opacitySlider.value / 100;
-            this.opacityValue.textContent = `${this.opacitySlider.value}%`;
-            this.updateCalibrationDisplay();
-        });
-    }
-    
-    async loadWalls() {
-        try {
-            const response = await fetch('/api/walls/');
-            if (response.ok) {
-                const data = await response.json();
-                this.walls = data.results || data;
-                this.populateWallSelect();
-            } else {
-                console.error('Failed to load walls:', response.statusText);
-                this.wallInfo.textContent = 'Failed to load walls';
-            }
-        } catch (error) {
-            console.error('Error loading walls:', error);
-            this.wallInfo.textContent = 'Error loading walls';
-        }
-    }
-    
-    populateWallSelect() {
-        this.wallSelect.innerHTML = '<option value="">Select a wall...</option>';
-        this.walls.forEach(wall => {
-            const option = document.createElement('option');
-            option.value = wall.id;
-            option.textContent = wall.name;
-            this.wallSelect.appendChild(option);
-        });
-    }
-    
-    updateWallInfo() {
-        if (this.selectedWall) {
-            this.wallInfo.textContent = `Venue: ${this.selectedWall.venue?.name || 'Unknown'}`;
-        } else {
-            this.wallInfo.textContent = '';
-        }
-    }
-    
-    async loadCalibrationData() {
-        if (!this.selectedWall) return;
-        
-        try {
-            this.wallInfo.textContent = 'Loading calibration data...';
+        // SVG overlay toggle
+        document.getElementById('show-svg-overlay').addEventListener('change', (e) => {
+            this.showOverlay = e.target.checked;
             
-            // Load calibrated SVG data which includes calibration image info
-            const response = await fetch(`/calibration/wall/${this.selectedWall.id}/svg-data/`);
-            if (response.ok) {
-                this.calibrationData = await response.json();
-                this.loadCalibrationImage();
-                this.calibrationInfo.textContent = `Calibration: ${this.calibrationData.calibration?.name || 'None'}`;
+            // Show/hide opacity control
+            const opacityControl = document.getElementById('svg-opacity-control');
+            if (this.showOverlay) {
+                opacityControl.classList.remove('hidden');
             } else {
-                console.error('Failed to load calibration data:', response.statusText);
-                this.calibrationInfo.textContent = 'No calibration data available';
+                opacityControl.classList.add('hidden');
             }
-        } catch (error) {
-            console.error('Error loading calibration data:', error);
-            this.calibrationInfo.textContent = 'Error loading calibration data';
-        }
+            
+            // Show/hide all SVG overlay canvases
+            const overlayCanvases = [
+                'svg-overlay-canvas',
+                'svg-overlay-canvas-combined',
+                'svg-overlay-canvas-right-fullscreen'
+            ];
+            
+            overlayCanvases.forEach(id => {
+                const canvas = document.getElementById(id);
+                if (canvas) {
+                    canvas.style.display = this.showOverlay ? 'block' : 'none';
+                }
+            });
+            
+            // Draw or clear overlay
+            if (this.showOverlay && this.svgData) {
+                this.drawSVGOverlay();
+            }
+        });
+        
+        // Opacity slider
+        document.getElementById('svg-opacity').addEventListener('input', (e) => {
+            this.opacity = e.target.value / 100;
+            document.getElementById('svg-opacity-value').textContent = `${e.target.value}%`;
+            
+            // Redraw overlay with new opacity
+            if (this.showOverlay && this.svgData) {
+                this.drawSVGOverlay();
+            }
+        });
     }
     
-    loadCalibrationImage() {
-        if (!this.calibrationData) {
-            this.wallInfo.textContent = 'No calibration data available';
+    updateWallStatus(message) {
+        const statusElement = document.getElementById('wall-status');
+        statusElement.textContent = message;
+    }
+    
+    updateWallInfo(wallName) {
+        // Update all wall info displays
+        const wallNames = [
+            'wall-name-right',
+            'wall-name-combined',
+            'wall-name-right-fullscreen'
+        ];
+        
+        const wallInfos = [
+            'wall-info-right',
+            'wall-info-combined',
+            'wall-info-right-fullscreen'
+        ];
+        
+        wallNames.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = wallName;
+            }
+        });
+        
+        wallInfos.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.classList.remove('hidden');
+            }
+        });
+    }
+    
+    drawSVGOverlay() {
+        console.log('drawSVGOverlay called', {
+            svgData: !!this.svgData,
+            calibrationMatrix: !!this.calibrationMatrix,
+            showOverlay: this.showOverlay
+        });
+        
+        if (!this.svgData || !this.calibrationMatrix) {
+            console.log('Missing SVG data or calibration matrix');
             return;
         }
         
-        // Use overlay_image if available, otherwise fall back to wall_image_url
-        const imageUrl = this.calibrationData.overlay_image || this.calibrationData.wall_image_url;
+        // Draw on all active overlay canvases
+        this.drawSVGOnCanvas('svg-overlay-canvas');
+        this.drawSVGOnCanvas('svg-overlay-canvas-combined');
+        this.drawSVGOnCanvas('svg-overlay-canvas-right-fullscreen');
+    }
+    
+    drawSVGOnCanvas(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
         
-        if (!imageUrl) {
-            this.wallInfo.textContent = 'No calibration image available';
+        const ctx = canvas.getContext('2d');
+        const container = canvas.parentElement;
+        const rect = container.getBoundingClientRect();
+        
+        // Set canvas size
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.display = 'block'; // Ensure canvas is visible
+        canvas.style.position = 'absolute'; // Ensure proper positioning
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        
+        console.log(`Canvas ${canvasId} initialized:`, {
+            width: rect.width,
+            height: rect.height,
+            dpr: dpr,
+            canvasWidth: canvas.width,
+            canvasHeight: canvas.height
+        });
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Set opacity
+        ctx.globalAlpha = this.opacity;
+        
+        // Draw wall image if available
+        this.drawWallImage(ctx, rect.width, rect.height);
+        
+        // Apply perspective transformation and draw SVG paths
+        this.drawTransformedSVG(ctx, rect.width, rect.height);
+    }
+    
+    drawTransformedSVG(ctx, canvasWidth, canvasHeight) {
+        console.log('drawTransformedSVG called', {
+            hasPaths: !!this.svgData.paths,
+            pathCount: this.svgData.paths ? Object.keys(this.svgData.paths).length : 0,
+            matrix: this.calibrationMatrix
+        });
+        
+        if (!this.svgData.paths) return;
+        
+        // Create transformation matrix from calibration data
+        const matrix = this.calibrationMatrix;
+        
+        // Draw each path
+        Object.values(this.svgData.paths).forEach((path, index) => {
+            console.log(`Drawing path ${index}:`, path);
+            if (!path.d) return;
+            
+            // Parse path and apply transformation
+            this.drawTransformedPath(ctx, path.d, matrix, canvasWidth, canvasHeight);
+        });
+    }
+    
+    drawTransformedPath(ctx, pathD, matrix, canvasWidth, canvasHeight) {
+        // Simple path parsing and transformation
+        // This is a simplified implementation - in production, you'd want to use a proper SVG path parser
+        
+        // Parse path commands
+        const commands = this.parsePathCommands(pathD);
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.fillStyle = '#ffffff30';
+        ctx.lineWidth = 2;
+        
+        // Draw a test rectangle to verify canvas is working
+        ctx.fillRect(50, 50, 100, 100);
+        
+        ctx.beginPath();
+        
+        commands.forEach(cmd => {
+            const [type, ...coords] = cmd;
+            
+            switch (type) {
+                case 'M': // Move to
+                    if (coords.length >= 2) {
+                        const [x, y] = this.transformPoint(coords[0], coords[1], matrix, canvasWidth, canvasHeight);
+                        if (x >= 0 && x <= canvasWidth && y >= 0 && y <= canvasHeight) {
+                            ctx.moveTo(x, y);
+                        }
+                    }
+                    break;
+                    
+                case 'L': // Line to
+                    if (coords.length >= 2) {
+                        for (let i = 0; i < coords.length; i += 2) {
+                            const [x, y] = this.transformPoint(coords[i], coords[i + 1], matrix, canvasWidth, canvasHeight);
+                            if (x >= 0 && x <= canvasWidth && y >= 0 && y <= canvasHeight) {
+                                ctx.lineTo(x, y);
+                            }
+                        }
+                    }
+                    break;
+                    
+                case 'C': // Cubic Bezier curve
+                    if (coords.length >= 6) {
+                        for (let i = 0; i < coords.length; i += 6) {
+                            const cp1x = coords[i], cp1y = coords[i + 1];
+                            const cp2x = coords[i + 2], cp2y = coords[i + 3];
+                            const endx = coords[i + 4], endy = coords[i + 5];
+                            
+                            const [cp1] = this.transformPoint(cp1x, cp1y, matrix, canvasWidth, canvasHeight);
+                            const [cp2] = this.transformPoint(cp2x, cp2y, matrix, canvasWidth, canvasHeight);
+                            const [end] = this.transformPoint(endx, endy, matrix, canvasWidth, canvasHeight);
+                            
+                            // Only draw if all points are within canvas bounds
+                            if (cp1[0] >= 0 && cp1[0] <= canvasWidth && cp1[1] >= 0 && cp1[1] <= canvasHeight &&
+                                cp2[0] >= 0 && cp2[0] <= canvasWidth && cp2[1] >= 0 && cp2[1] <= canvasHeight &&
+                                end[0] >= 0 && end[0] <= canvasWidth && end[1] >= 0 && end[1] <= canvasHeight) {
+                                ctx.bezierCurveTo(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
+                            }
+                        }
+                    }
+                    break;
+                    
+                case 'Z': // Close path
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.beginPath();
+                    break;
+            }
+        });
+    }
+    
+    drawWallImage(ctx, canvasWidth, canvasHeight) {
+        if (!this.svgData || !this.svgData.wall_image_url) {
             return;
         }
         
-        this.calibrationImage = new Image();
-        this.calibrationImage.crossOrigin = 'anonymous';
-        this.calibrationImage.onload = () => {
-            this.wallInfo.textContent = 'Wall and calibration loaded successfully';
-            this.updateCalibrationDisplay();
-        };
-        this.calibrationImage.onerror = () => {
-            this.wallInfo.textContent = 'Failed to load calibration image';
-        };
-        this.calibrationImage.src = imageUrl;
+        console.log('Drawing wall image:', this.svgData.wall_image_url);
         
-        // Store calibration transformation matrix
-        this.calibrationTransform = this.calibrationData.calibration?.perspective_transform;
+        const img = new Image();
+        img.onload = () => {
+            // Draw image to fill canvas
+            ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+            
+            // Draw SVG paths on top of image
+            this.drawTransformedSVG(ctx, canvasWidth, canvasHeight);
+        };
+        
+        img.onerror = () => {
+            console.error('Failed to load wall image:', this.svgData.wall_image_url);
+        };
+        
+        img.src = this.svgData.wall_image_url;
     }
     
-    updateCalibrationDisplay() {
-        // This will be called by right visualizer to draw calibration image
-        if (window.rightVisualizer) {
-            window.rightVisualizer.setCalibrationImage(
-                this.showCalibrationImage ? this.calibrationImage : null,
-                this.calibrationOpacity,
-                this.calibrationTransform
-            );
+    parsePathCommands(pathD) {
+        // Simple regex-based path parser
+        // This is a basic implementation - consider using a proper SVG library for production
+        const regex = /([MmLlHhVvCcSsQqTtAaZz])\s*([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+        const commands = [];
+        let match;
+        
+        while ((match = regex.exec(pathD)) !== null) {
+            const type = match[1];
+            const coordsStr = match[2];
+            const coords = [];
+            
+            // Extract numbers from coordinates string
+            const numberRegex = /-?\d*\.?\d+/g;
+            let numberMatch;
+            while ((numberMatch = numberRegex.exec(coordsStr)) !== null) {
+                coords.push(parseFloat(numberMatch[0]));
+            }
+            
+            commands.push([type, ...coords]);
         }
+        
+        return commands;
+    }
+    
+    transformPoint(x, y, matrix, canvasWidth, canvasHeight) {
+        // Apply perspective transformation matrix
+        // matrix is expected to be a 3x3 array in row-major order
+        
+        if (!matrix || matrix.length !== 3 || matrix[0].length !== 3) {
+            // Fallback to simple scaling if no valid matrix
+            return [x, y];
+        }
+        
+        // Convert to homogeneous coordinates
+        const w = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2];
+        
+        if (Math.abs(w) < 0.0001) {
+            // Point at infinity - return far away
+            return [canvasWidth * 2, canvasHeight * 2];
+        }
+        
+        const transformedX = (matrix[0][0] * x + matrix[0][1] * y + matrix[0][2]) / w;
+        const transformedY = (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]) / w;
+        
+        // Log transformation for debugging
+        if (Math.random() < 0.01) { // Only log 1% of points to avoid spam
+            console.log('Transform point:', {
+                original: [x, y],
+                transformed: [transformedX, transformedY],
+                w: w
+            });
+        }
+        
+        return [transformedX, transformedY];
     }
 }
 
@@ -1541,10 +1653,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const leftVisualizer = new PoseSkeletonVisualizer('left');
     const rightVisualizer = new PoseSkeletonVisualizer('right');
     const viewModeManager = new ViewModeManager(leftVisualizer, rightVisualizer);
-    const wallCalibrationManager = new WallCalibrationManager();
+    const wallSVGManager = new WallSVGManager();
     
-    // Make right visualizer available globally for calibration manager
-    window.rightVisualizer = rightVisualizer;
+    // Link the wall SVG manager to the view mode manager
+    viewModeManager.setWallSVGManager(wallSVGManager);
 });
 </script>
 {% endblock extra_js %}
