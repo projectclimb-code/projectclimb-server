@@ -51,14 +51,19 @@ class InputWebSocketClient:
         while self.running:
             try:
                 logger.info(f"Connecting to input WebSocket: {self.url}")
-                self.websocket = await websockets.connect(self.url)
+                # Add connection parameters for better reliability
+                self.websocket = await websockets.connect(
+                    self.url,
+                    ping_timeout=30,  # 30 second ping timeout
+                    ping_interval=10   # 10 second ping interval
+                )
                 logger.info("Successfully connected to input WebSocket")
                 self.current_reconnect_delay = self.reconnect_delay  # Reset delay on success
                 
                 # Listen for messages
                 await self.listen_for_messages()
                 
-            except (websockets.exceptions.ConnectionClosed, 
+            except (websockets.exceptions.ConnectionClosed,
                    websockets.exceptions.ConnectionClosedError,
                    ConnectionRefusedError,
                    OSError) as e:
@@ -124,10 +129,12 @@ class OutputWebSocketClient:
             try:
                 logger.info(f"Connecting to output WebSocket: {self.url}")
                 # Set ping timeout and close timeout to handle connection issues better
+                # Use a longer ping timeout and shorter ping interval for better reliability
                 self.websocket = await websockets.connect(
                     self.url,
-                    ping_timeout=20,  # 20 second ping timeout
-                    close_timeout=10   # 10 second close timeout
+                    ping_timeout=30,  # 30 second ping timeout (increased from 20)
+                    close_timeout=10,  # 10 second close timeout
+                    ping_interval=10   # 10 second ping interval (explicitly set)
                 )
                 logger.info("Successfully connected to output WebSocket")
                 self.current_reconnect_delay = self.reconnect_delay  # Reset delay on success
@@ -135,8 +142,26 @@ class OutputWebSocketClient:
                 # Start sender task
                 self.sender_task = asyncio.create_task(self.message_sender())
                 
-                # Keep connection alive
-                await self.keep_alive()
+                # Start keep-alive task
+                keep_alive_task = asyncio.create_task(self.keep_alive())
+                
+                # Wait for either the connection to close or tasks to be cancelled
+                try:
+                    await asyncio.gather(
+                        self.websocket.wait_closed(),
+                        keep_alive_task,
+                        return_exceptions=True
+                    )
+                except Exception as e:
+                    logger.debug(f"Connection monitoring task completed: {e}")
+                
+                # Cancel the sender task if it's still running
+                if self.sender_task and not self.sender_task.done():
+                    self.sender_task.cancel()
+                    try:
+                        await self.sender_task
+                    except asyncio.CancelledError:
+                        pass
                 
             except (websockets.exceptions.ConnectionClosed,
                    websockets.exceptions.ConnectionClosedError,
@@ -163,25 +188,29 @@ class OutputWebSocketClient:
         """Keep connection alive with periodic pings"""
         try:
             while self.running and self.websocket:
-                await asyncio.sleep(20)  # Reduced ping interval to 20 seconds
-                if self.websocket:
-                    try:
+                try:
+                    # Use a shorter interval than the ping_timeout to ensure we ping before timeout
+                    await asyncio.sleep(10)  # Ping every 10 seconds (half of ping_timeout)
+                    
+                    # Check if websocket is still valid before pinging
+                    if self.websocket:
                         await self.websocket.ping()
                         logger.debug("Ping sent to keep connection alive")
-                    except websockets.exceptions.ConnectionClosed as e:
-                        logger.warning(f"Output WebSocket connection closed during ping: {e}")
-                        raise
-                    except Exception as e:
-                        logger.error(f"Error sending ping: {e}")
-                        raise
+                    else:
+                        logger.warning("WebSocket is closed, stopping keep-alive")
+                        break
+                        
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.warning(f"Output WebSocket connection closed during ping: {e}")
+                    break  # Exit the loop instead of raising, to avoid unhandled exceptions
+                except Exception as e:
+                    logger.error(f"Error sending ping: {e}")
+                    break  # Exit the loop on other errors as well
+                    
         except asyncio.CancelledError:
             logger.info("Keep-alive task cancelled")
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.warning(f"Output WebSocket connection closed during keep-alive: {e}")
-            raise
         except Exception as e:
             logger.error(f"Unexpected error in keep-alive: {e}")
-            raise
     
     async def message_sender(self):
         """Send queued messages to WebSocket"""
@@ -192,21 +221,30 @@ class OutputWebSocketClient:
                     timeout=1.0
                 )
                 
+                # Check if websocket is still valid before sending
                 if self.websocket:
                     try:
                         await self.websocket.send(json.dumps(message))
                         logger.debug(f"Sent message: {message}")
                     except websockets.exceptions.ConnectionClosed as e:
                         logger.warning(f"Output WebSocket connection closed while sending: {e}")
-                        # Re-queue message
-                        await self.message_queue.put(message)
-                        raise
+                        # Re-queue message only if we're still running
+                        if self.running:
+                            await self.message_queue.put(message)
+                        break  # Exit the loop to trigger reconnection
                     except Exception as e:
                         logger.error(f"Error sending message: {e}")
-                        # Re-queue message
-                        await self.message_queue.put(message)
+                        # Re-queue message only if we're still running
+                        if self.running:
+                            await self.message_queue.put(message)
                         # Continue trying to send other messages
                         continue
+                else:
+                    # WebSocket is closed, re-queue message and exit
+                    logger.warning("WebSocket is closed, re-queuing message")
+                    if self.running:
+                        await self.message_queue.put(message)
+                    break
                     
             except asyncio.TimeoutError:
                 continue  # No message to send, continue loop
@@ -943,6 +981,9 @@ class WebSocketPoseSessionTracker:
         
         if self.output_client:
             self.output_client.stop()
+        
+        # Give some time for tasks to complete properly
+        await asyncio.sleep(0.1)
         
         # Log final statistics
         elapsed = time.time() - self.start_time

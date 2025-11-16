@@ -83,4 +83,7 @@ dependencies = [
     "numpy>=2,<2.3.0",
     "homography>=0.1.7",
     "django-revproxy>=0.13.0",
+    "pygame>=2.6.1",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
 ]

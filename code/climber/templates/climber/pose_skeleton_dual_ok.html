@@ -232,26 +232,8 @@
     <div class="bg-white rounded-lg shadow-md p-6">
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Instructions</h2>
         <div class="text-gray-600 space-y-2">
-            <p>1. Connect to two WebSockets that stream pose data in JSON format.</p>
-            <p>2. The right visualization supports the new format from websocket_pose_session_tracker.py:</p>
-            <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
-{
-  "session": {
-    "holds": [
-      {"id": "hold_1", "type": "start", "status": "completed", "time": "2023-..."},
-      ...
-    ],
-    "startTime": "2023-...Z",
-    "endTime": null,
-    "status": "started"
-  },
-  "pose": [
-    {"x": 0.5, "y": 0.3, "z": 0.0, "visibility": 0.9},
-    ...
-  ]
-}
-            </pre>
-            <p>3. The left visualization still supports the original format:</p>
+            <p>1. Connect to two WebSockets that stream MediaPipe pose data in JSON format.</p>
+            <p>2. The expected format is:</p>
             <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
 {
   "landmarks": [
@@ -262,14 +244,13 @@
   "timestamp": 1234567890
 }
             </pre>
-            <p>4. Choose your view mode:</p>
+            <p>3. Choose your view mode:</p>
             <ul class="list-disc pl-6 space-y-1">
                 <li><strong>Side by Side:</strong> View both poses in separate canvases</li>
                 <li><strong>Combined View:</strong> View both poses overlaid on a single canvas (left pose in blue, right pose in green)</li>
                 <li><strong>Fullscreen:</strong> View a single pose in fullscreen mode</li>
             </ul>
-            <p>5. In combined view, left pose is rendered in blue and right pose in green for easy differentiation.</p>
-            <p>6. The right visualization will display session information including completed holds when using the new format.</p>
+            <p>4. In combined view, left pose is rendered in blue and right pose in green for easy differentiation.</p>
         </div>
     </div>
 </div>
@@ -288,10 +269,6 @@ class PoseSkeletonVisualizer {
         this.frameCount = 0;
         this.fps = 0;
         this.currentLandmarks = null;
-        
-        // Store the original canvas and context for fullscreen mode
-        this.originalCanvas = this.canvas;
-        this.originalCtx = this.ctx;
         
         // MediaPipe Pose connections
         this.poseConnections = [
@@ -412,7 +389,6 @@ class PoseSkeletonVisualizer {
                 try {
                     const data = JSON.parse(event.data);
                     this.handlePoseData(data);
-                    //console.log(data)
                 } catch (error) {
                     console.error(`Error parsing ${this.side} WebSocket message:`, error);
                 }
@@ -510,13 +486,7 @@ class PoseSkeletonVisualizer {
     }
     
     handlePoseData(data) {
-        // Handle the new JSON format from websocket_pose_session_tracker.py
-        if (data.pose && Array.isArray(data.pose)) {
-            this.currentLandmarks = data.pose;
-            this.updateStats(data.pose.length);
-            this.updatePoseInfo(data);
-        } else if (data.landmarks && Array.isArray(data.landmarks)) {
-            // Fallback to original format for backward compatibility
+        if (data.landmarks && Array.isArray(data.landmarks)) {
             this.currentLandmarks = data.landmarks;
             this.updateStats(data.landmarks.length);
             this.updatePoseInfo(data);
@@ -579,31 +549,13 @@ class PoseSkeletonVisualizer {
             const detailsDiv = document.getElementById(detailsDivs[index]);
             
             if (infoDiv && detailsDiv) {
-                const landmarks = data.pose || data.landmarks; // Handle both new and old formats
-                if (landmarks && landmarks.length > 0) {
+                if (data.landmarks && data.landmarks.length > 0) {
                     infoDiv.classList.remove('hidden');
-                    
-                    // Handle new format with session data
-                    if (data.session) {
-                        const session = data.session;
-                        const completedHolds = session.holds ? session.holds.filter(h => h.status === 'completed').length : 0;
-                        const totalHolds = session.holds ? session.holds.length : 0;
-                        
-                        detailsDiv.innerHTML = `
-                            <div>Session Status: ${session.status || 'Unknown'}</div>
-                            <div>Completed Holds: ${completedHolds}/${totalHolds}</div>
-                            <div>Visible landmarks: ${landmarks.filter(l => l.visibility > 0.5).length}</div>
-                            ${session.startTime ? `<div>Start: ${new Date(session.startTime).toLocaleTimeString()}</div>` : ''}
-                        `;
-                    }
-                    // Fallback to original format
-                    else {
-                        detailsDiv.innerHTML = `
-                            <div>Frame: ${data.frame_number || 'N/A'}</div>
-                            <div>Timestamp: ${data.timestamp || 'N/A'}</div>
-                            <div>Visible landmarks: ${landmarks.filter(l => l.visibility > 0.5).length}</div>
-                        `;
-                    }
+                    detailsDiv.innerHTML = `
+                        <div>Frame: ${data.frame_number || 'N/A'}</div>
+                        <div>Timestamp: ${data.timestamp || 'N/A'}</div>
+                        <div>Visible landmarks: ${data.landmarks.filter(l => l.visibility > 0.5).length}</div>
+                    `;
                 } else {
                     infoDiv.classList.add('hidden');
                 }
