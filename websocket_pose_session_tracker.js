@@ -382,6 +382,9 @@ class SVGHoldDetector {
     this.holdPaths = svgParser.getHoldPaths();
     this.holdCenters = svgParser.getHoldCenters();
     
+    // Extract SVG dimensions for coordinate transformation
+    this.svgDimensions = this.extractSVGDimensions();
+    
     // Filter holds based on route if provided
     if (this.routeHolds) {
       this.filterHoldsByRoute();
@@ -395,8 +398,26 @@ class SVGHoldDetector {
     // MediaPipe landmark indices for hands
     this.leftHandIndices = [15, 17, 19, 21]; // Left wrist, pinky, index, thumb
     this.rightHandIndices = [16, 18, 20, 22]; // Right wrist, pinky, index, thumb
+    
+    // Video dimensions for coordinate transformation
+    this.videoWidth = 640;
+    this.videoHeight = 480;
   }
 
+  extractSVGDimensions() {
+    if (!this.svgParser.svgData || !this.svgParser.svgData.svg) {
+      logger.warning('Could not extract SVG dimensions, using defaults');
+      return { width: 1000, height: 1000 };
+    }
+    
+    const svg = this.svgParser.svgData.svg;
+    const width = parseFloat(svg['@_width']) || 1000;
+    const height = parseFloat(svg['@_height']) || 1000;
+    
+    logger.info(`SVG dimensions: ${width}x${height}`);
+    return { width, height };
+  }
+  
   filterHoldsByRoute() {
     if (!this.routeHolds) return;
     
@@ -420,6 +441,65 @@ class SVGHoldDetector {
     
     logger.info(`Filtered to ${Object.keys(this.holdCenters).length} holds from route`);
   }
+  
+  /**
+   * Transform pose coordinates from relative space (0-1) to SVG coordinate space
+   * Takes into account:
+   * - Video dimensions (640x480)
+   * - SVG dimensions
+   * - Centering and scaling to maintain aspect ratio
+   */
+  transformPoseToSVGCoordinates(landmarks) {
+    if (!landmarks || landmarks.length === 0) {
+      return [];
+    }
+    
+    // Calculate scaling factors to maintain aspect ratio
+    const videoAspectRatio = this.videoWidth / this.videoHeight; // 640/480 = 4/3
+    const svgAspectRatio = this.svgDimensions.width / this.svgDimensions.height;
+    
+    let scaleX, scaleY, offsetX, offsetY;
+    
+    if (videoAspectRatio > svgAspectRatio) {
+      // Video is wider than SVG, scale by height and center horizontally
+      scaleY = this.svgDimensions.height;
+      scaleX = scaleY * videoAspectRatio;
+      offsetX = (this.svgDimensions.width - scaleX) / 2;
+      offsetY = 0;
+    } else {
+      // Video is taller than SVG or same aspect ratio, scale by width and center vertically
+      scaleX = this.svgDimensions.width;
+      scaleY = scaleX / videoAspectRatio;
+      offsetX = 0;
+      offsetY = (this.svgDimensions.height - scaleY) / 2;
+    }
+    
+    // Debug output for transformation parameters
+    logger.debug(`Coordinate transformation: Video(${this.videoWidth}x${this.videoHeight}), SVG(${this.svgDimensions.width}x${this.svgDimensions.height})`);
+    logger.debug(`Transformation: scaleX=${scaleX.toFixed(1)}, scaleY=${scaleY.toFixed(1)}, offsetX=${offsetX.toFixed(1)}, offsetY=${offsetY.toFixed(1)}`);
+    
+    // Transform each landmark
+    return landmarks.map((landmark, index) => {
+      // Convert from relative coordinates (0-1) to video coordinates (640x480)
+      const videoX = landmark.x * this.videoWidth;
+      const videoY = landmark.y * this.videoHeight;
+      
+      // Scale to SVG dimensions with centering
+      const svgX = (videoX / this.videoWidth) * scaleX + offsetX;
+      const svgY = (videoY / this.videoHeight) * scaleY + offsetY;
+      
+      // Debug output for hand landmarks specifically
+      if (this.leftHandIndices.includes(index) || this.rightHandIndices.includes(index)) {
+        logger.debug(`Landmark ${index}: relative(${landmark.x.toFixed(3)}, ${landmark.y.toFixed(3)}) -> video(${videoX.toFixed(1)}, ${videoY.toFixed(1)}) -> svg(${svgX.toFixed(1)}, ${svgY.toFixed(1)})`);
+      }
+      
+      return {
+        ...landmark,
+        x: svgX,
+        y: svgY
+      };
+    });
+  }
 
   detectHoldsTouched(transformedLandmarks) {
     if (!transformedLandmarks || transformedLandmarks.length === 0) {
@@ -427,19 +507,49 @@ class SVGHoldDetector {
       return {};
     }
     
-    // Extract hand positions
-    const leftHandPos = this.getHandPosition(transformedLandmarks, this.leftHandIndices);
-    const rightHandPos = this.getHandPosition(transformedLandmarks, this.rightHandIndices);
+    // Debug output for original hand landmarks
+    const leftHandOriginal = this.getHandPosition(transformedLandmarks, this.leftHandIndices);
+    const rightHandOriginal = this.getHandPosition(transformedLandmarks, this.rightHandIndices);
+    if (leftHandOriginal) {
+      logger.debug(`Original left hand relative position: (${leftHandOriginal.x.toFixed(3)}, ${leftHandOriginal.y.toFixed(3)})`);
+    }
+    if (rightHandOriginal) {
+      logger.debug(`Original right hand relative position: (${rightHandOriginal.x.toFixed(3)}, ${rightHandOriginal.y.toFixed(3)})`);
+    }
+    
+    // Transform landmarks to SVG coordinate space for touch detection
+    // This ensures proper touch detection while keeping output in relative coordinates
+    const svgLandmarks = this.transformPoseToSVGCoordinates(transformedLandmarks);
+    
+    // Extract hand positions using SVG coordinates for touch detection
+    const leftHandPos = this.getHandPosition(svgLandmarks, this.leftHandIndices);
+    const rightHandPos = this.getHandPosition(svgLandmarks, this.rightHandIndices);
     
     const currentTime = Date.now() / 1000; // Convert to seconds
     const statusChanges = {};
     
+    // Debug output for hold_203 and hand positions
+    if (this.holdCenters['hold_203']) {
+      logger.debug(`Hold_203 SVG coordinates: (${this.holdCenters['hold_203'].x.toFixed(1)}, ${this.holdCenters['hold_203'].y.toFixed(1)})`);
+    }
+    if (leftHandPos) {
+      logger.debug(`Left hand SVG coordinates: (${leftHandPos.x.toFixed(1)}, ${leftHandPos.y.toFixed(1)})`);
+    }
+    if (rightHandPos) {
+      logger.debug(`Right hand SVG coordinates: (${rightHandPos.x.toFixed(1)}, ${rightHandPos.y.toFixed(1)})`);
+    }
+    
     // Check each hold for proximity to hands
     Object.entries(this.holdCenters).forEach(([holdId, holdCenter]) => {
-      // Calculate distances
+      // Calculate distances using SVG coordinates
       const leftDist = leftHandPos ? this.distance(leftHandPos, holdCenter) : Infinity;
       const rightDist = rightHandPos ? this.distance(rightHandPos, holdCenter) : Infinity;
       const minDist = Math.min(leftDist, rightDist);
+      
+      // Debug output for hold_203 specifically
+      if (holdId === 'hold_203') {
+        logger.debug(`Hold_203 distances - Left: ${leftDist.toFixed(1)}, Right: ${rightDist.toFixed(1)}, Min: ${minDist.toFixed(1)}, Threshold: ${this.proximityThreshold}`);
+      }
       
       const isNearLeft = leftHandPos && leftDist < this.proximityThreshold;
       const isNearRight = rightHandPos && rightDist < this.proximityThreshold;
@@ -1026,7 +1136,7 @@ class WebSocketPoseSessionTracker {
         this.streamSvgOnly
       );
       
-      // Add pose data if included
+      // Add pose data if included - use original relative coordinates for output
       if (!this.noStreamLandmarks) {
         outputData.pose = landmarks;
       }

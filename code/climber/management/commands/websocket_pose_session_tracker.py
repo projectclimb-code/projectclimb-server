@@ -280,7 +280,7 @@ class SVGHoldDetector:
     
     def __init__(self, svg_parser, proximity_threshold: float = 50.0,
                  touch_duration: float = 2.0, route_holds=None,
-                 video_aspect_ratio=(4, 3), svg_aspect_ratio=None):
+                 video_aspect_ratio=(4, 3), svg_aspect_ratio=None, video_dimensions=(640, 480)):
         """
         Initialize SVG hold detector
         
@@ -291,12 +291,14 @@ class SVGHoldDetector:
             route_holds: Dictionary mapping hold_id -> hold_type for route filtering
             video_aspect_ratio: Tuple of (width, height) for video aspect ratio
             svg_aspect_ratio: Tuple of (width, height) for SVG aspect ratio (auto-detected if None)
+            video_dimensions: Tuple of (width, height) for actual video dimensions (default: 640x480)
         """
         self.svg_parser = svg_parser
         self.proximity_threshold = proximity_threshold
         self.touch_duration = touch_duration
         self.route_holds = route_holds
         self.video_aspect_ratio = video_aspect_ratio
+        self.video_dimensions = video_dimensions
         
         # Get SVG dimensions and calculate aspect ratio
         if svg_aspect_ratio is None:
@@ -315,6 +317,10 @@ class SVGHoldDetector:
         # when both video and SVG are scaled to fill the same height
         self.horizontal_scale_factor = (video_width / video_height) / (svg_width / svg_height)
         
+        # Calculate centering offset for proper coordinate transformation
+        # Both video and SVG are centered when displayed with different aspect ratios
+        self._calculate_centering_offsets()
+        
         # Extract hold paths from SVG
         self.hold_paths = svg_parser.extract_paths()
         self.hold_centers = get_hold_centers(svg_parser)
@@ -325,7 +331,7 @@ class SVGHoldDetector:
         
         # Track hold touch state
         self.hold_touch_start_times = {}  # hold_id -> timestamp when touch started
-        self.hold_status = {}  # hold_id -> status ('untouched', 'completed')
+        self.hold_status = {}  # hold_id -> status ('untouched', 'touched')
         self.touched_holds = set()  # Track holds that have been touched in current session
         
         # MediaPipe landmark indices for hands
@@ -353,6 +359,51 @@ class SVGHoldDetector:
         
         logger.info(f"Filtered to {len(self.hold_centers)} holds from route")
     
+    def _calculate_centering_offsets(self):
+        """
+        Calculate centering offsets for proper coordinate transformation between video and SVG.
+        
+        Both video and SVG are centered when displayed with different aspect ratios.
+        This method calculates the offsets needed to properly transform coordinates.
+        """
+        video_width, video_height = self.video_dimensions
+        video_aspect_width, video_aspect_height = self.video_aspect_ratio
+        svg_width, svg_height = self.svg_aspect_ratio
+        
+        # Get actual SVG dimensions from parser
+        actual_svg_width, actual_svg_height = self.svg_parser.get_svg_dimensions()
+        
+        logger.info(f"DEBUG: Video dimensions: {video_width}x{video_height}")
+        logger.info(f"DEBUG: Video aspect ratio: {video_aspect_width}:{video_aspect_height}")
+        logger.info(f"DEBUG: SVG aspect ratio: {svg_width}:{svg_height}")
+        logger.info(f"DEBUG: Actual SVG dimensions: {actual_svg_width}x{actual_svg_height}")
+        
+        # Calculate the actual display dimensions for video (maintaining aspect ratio)
+        video_display_height = video_height  # Video fills the height
+        video_display_width = video_display_height * (video_aspect_width / video_aspect_height)
+        
+        # Calculate the actual display dimensions for SVG (maintaining aspect ratio)
+        svg_display_height = video_height  # SVG also fills the height
+        svg_display_width = svg_display_height * (svg_width / svg_height)
+        
+        # Calculate centering offsets (both are centered horizontally)
+        # Video centering offset (how much video is shifted from left edge)
+        self.video_center_offset = (video_width - video_display_width) / 2
+        
+        # SVG centering offset (how much SVG is shifted from left edge)
+        self.svg_center_offset = (video_width - svg_display_width) / 2
+        
+        # Calculate the offset between video and SVG coordinate systems
+        # This accounts for the different centering when both are displayed
+        self.coordinate_offset = self.video_center_offset - self.svg_center_offset
+        
+        logger.debug(f"Video display dimensions: {video_display_width}x{video_display_height}")
+        logger.debug(f"SVG display dimensions: {svg_display_width}x{svg_display_height}")
+        logger.debug(f"Video center offset: {self.video_center_offset}")
+        logger.debug(f"SVG center offset: {self.svg_center_offset}")
+        logger.debug(f"Coordinate offset: {self.coordinate_offset}")
+        logger.debug(f"Horizontal scale factor: {self.horizontal_scale_factor}")
+    
     def detect_holds_touched(self, transformed_landmarks: List[Dict]) -> Dict[str, str]:
         """
         Detect which holds are being touched based on hand landmarks
@@ -371,6 +422,10 @@ class SVGHoldDetector:
         left_hand_pos = self._get_hand_position(transformed_landmarks, self.left_hand_indices)
         right_hand_pos = self._get_hand_position(transformed_landmarks, self.right_hand_indices)
         
+        # Debug print hand positions
+        logger.info(f"DEBUG: Left hand position: {left_hand_pos}")
+        logger.info(f"DEBUG: Right hand position: {right_hand_pos}")
+        
         current_time = time.time()
         status_changes = {}
         
@@ -379,6 +434,11 @@ class SVGHoldDetector:
             # Skip if not in route holds (if filtering is enabled)
             if self.route_holds and hold_id not in self.route_holds:
                 continue
+            
+            # Debug print for hold_203 specifically
+            if hold_id == 'hold_203':
+                logger.info(f"DEBUG: Hold {hold_id} center: {self.hold_centers.get(hold_id, 'N/A')}")
+                logger.info(f"DEBUG: Hold {hold_id} path data: {hold_path_data}")
                 
             # Check if either hand is touching the hold
             left_touching = False
@@ -386,9 +446,13 @@ class SVGHoldDetector:
             
             if left_hand_pos:
                 left_touching = self._is_hand_touching_hold(left_hand_pos, hold_path_data)
+                if hold_id == 'hold_203':
+                    logger.info(f"DEBUG: Left hand touching hold_203: {left_touching}")
             
             if right_hand_pos:
                 right_touching = self._is_hand_touching_hold(right_hand_pos, hold_path_data)
+                if hold_id == 'hold_203':
+                    logger.info(f"DEBUG: Right hand touching hold_203: {right_touching}")
             
             is_touching = left_touching or right_touching
             current_status = self.hold_status.get(hold_id, 'untouched')
@@ -400,12 +464,12 @@ class SVGHoldDetector:
                     self.hold_touch_start_times[hold_id] = current_time
                     logger.debug(f"Hold {hold_id} touch started at {current_time}")
                 elif current_time - self.hold_touch_start_times[hold_id] >= self.touch_duration:
-                    # Has been touching long enough to count as completed
+                    # Has been touching long enough to count as touched
                     if current_status == 'untouched':
                         self.hold_status[hold_id] = 'touched'
                         status_changes[hold_id] = 'touched'
                         self.touched_holds.add(hold_id)
-                        logger.info(f"Hold {hold_id} completed after {self.touch_duration}s touch")
+                        logger.info(f"Hold {hold_id} touched after {self.touch_duration}s touch")
             else:
                 # Hand is not touching the hold
                 if hold_id in self.hold_touch_start_times:
@@ -432,23 +496,52 @@ class SVGHoldDetector:
         return touched_paths
     
     def _get_hand_position(self, landmarks: List[Dict], hand_indices: List[int]) -> Optional[Tuple[float, float]]:
-        """Get average position of hand landmarks with aspect ratio correction"""
+        """
+        Get average position of hand landmarks with proper coordinate transformation.
+        
+        This method transforms pose coordinates from relative coordinate space to SVG coordinate space,
+        accounting for both scaling differences and centering offsets.
+        """
         hand_positions = []
+        
+        # Debug logging for raw landmark coordinates
+        raw_positions = []
         
         for idx in hand_indices:
             if idx < len(landmarks):
                 landmark = landmarks[idx]
                 if landmark.get('visibility', 0) > 0.5:  # Only use visible landmarks
-                    # Apply horizontal scaling to account for aspect ratio differences
-                    # The landmarks are already transformed by homography, but we need
-                    # to account for the different aspect ratios between video and SVG
+                    # The landmarks are already transformed by homography to SVG coordinate space
+                    # but we need to account for the different aspect ratios and centering
                     x = landmark['x']
                     y = landmark['y']
                     
-                    # Apply horizontal scaling to match SVG coordinate system
-                    # This assumes the SVG is centered when displayed with different aspect ratio
-                    scaled_x = x * self.horizontal_scale_factor
-                    hand_positions.append((scaled_x, y))
+                    # Store raw position for debugging
+                    raw_positions.append((x, y))
+                    
+                    # The coordinates appear to be in relative space (0-1 range) while SVG coordinates are much larger
+                    # We need to transform from relative coordinates to SVG coordinate space
+                    # First, get actual SVG dimensions
+                    actual_svg_width, actual_svg_height = self.svg_parser.get_svg_dimensions()
+                    
+                    # Transform from relative coordinates to SVG coordinates
+                    # Scale up to SVG dimensions and apply centering offset
+                    svg_x = x * actual_svg_width
+                    svg_y = y * actual_svg_height
+                    
+                    # Apply centering offset to account for different aspect ratios
+                    # Both video and SVG are centered when displayed
+                    transformed_x = svg_x * self.horizontal_scale_factor - self.coordinate_offset
+                    
+                    hand_positions.append((transformed_x, svg_y))
+        
+        # Debug logging for hand positions
+        if raw_positions:
+            hand_type = "Left" if hand_indices == self.left_hand_indices else "Right"
+            logger.info(f"DEBUG: {hand_type} hand raw positions: {raw_positions}")
+            logger.info(f"DEBUG: {hand_type} hand transformed positions: {hand_positions}")
+            logger.info(f"DEBUG: Horizontal scale factor: {self.horizontal_scale_factor}")
+            logger.info(f"DEBUG: Coordinate offset: {self.coordinate_offset}")
         
         if hand_positions:
             # Return average position
@@ -477,16 +570,37 @@ class SVGHoldDetector:
         if hold_id in self.hold_centers:
             center = self.hold_centers[hold_id]
             distance = self._distance(hand_pos, center)
+            
+            # Debug logging for hold_203
+            if hold_id == 'hold_203':
+                logger.info(f"DEBUG: Hold {hold_id} distance check:")
+                logger.info(f"  Hand position: {hand_pos}")
+                logger.info(f"  Hold center: {center}")
+                logger.info(f"  Distance: {distance}")
+                logger.info(f"  Proximity threshold: {self.proximity_threshold}")
+            
             if distance > self.proximity_threshold:
+                if hold_id == 'hold_203':
+                    logger.info(f"DEBUG: Hold {hold_id} - Distance too large, not touching")
                 return False
         
         # Then check if hand is actually inside the SVG path
         try:
             path_d = hold_path_data['d']
-            return self.svg_parser.point_in_path(hand_pos, path_d)
+            is_inside_path = self.svg_parser.point_in_path(hand_pos, path_d)
+            
+            # Debug logging for hold_203
+            if hold_id == 'hold_203':
+                logger.info(f"DEBUG: Hold {hold_id} path check:")
+                logger.info(f"  Path data: {path_d[:100]}..." if len(path_d) > 100 else f"  Path data: {path_d}")
+                logger.info(f"  Point in path: {is_inside_path}")
+            
+            return is_inside_path
         except Exception as e:
             logger.warning(f"Error checking if hand is inside path for hold {hold_id}: {e}")
             # Fallback to distance-based detection
+            if hold_id == 'hold_203':
+                logger.info(f"DEBUG: Hold {hold_id} - Using fallback distance check: {distance <= self.proximity_threshold}")
             return distance <= self.proximity_threshold
     
     def _distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
@@ -617,7 +731,7 @@ class SessionTracker:
     def end_session(self):
         """End the current session"""
         self.session_end_time = datetime.now(timezone.utc)
-        self.session_status = 'completed'
+        self.session_status = 'touched'
         logger.info(f"Session ended at {self.session_end_time.isoformat()}")
 
 
@@ -894,7 +1008,8 @@ class WebSocketPoseSessionTracker:
             self.svg_parser,
             self.proximity_threshold,
             self.touch_duration,
-            route_holds=self._extract_route_holds(route_data) if route_data else None
+            route_holds=self._extract_route_holds(route_data) if route_data else None,
+            video_dimensions=(640, 480)  # Default video dimensions as specified
         )
         
         # Setup session tracker
