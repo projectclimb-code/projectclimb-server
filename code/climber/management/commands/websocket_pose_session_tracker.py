@@ -280,7 +280,7 @@ class SVGHoldDetector:
     
     def __init__(self, svg_parser, proximity_threshold: float = 50.0,
                  touch_duration: float = 2.0, route_holds=None,
-                 video_aspect_ratio=(4, 3), svg_aspect_ratio=None, video_dimensions=(640, 480)):
+                 video_aspect_ratio=(3, 4), svg_aspect_ratio=None, video_dimensions=(480, 640)):
         """
         Initialize SVG hold detector
         
@@ -337,7 +337,11 @@ class SVGHoldDetector:
         # MediaPipe landmark indices for hands
         self.left_hand_indices = [15, 17, 19, 21]  # Left wrist, pinky, index, thumb
         self.right_hand_indices = [16, 18, 20, 22]  # Right wrist, pinky, index, thumb
-    
+
+        #self.left_hand_indices = [15,]  # Left wrist, pinky, index, thumb
+        #self.right_hand_indices = [16,]  # Right wrist, pinky, index, thumb
+
+
     def _filter_holds_by_route(self):
         """Filter holds and paths based on route specification"""
         if not self.route_holds:
@@ -435,24 +439,17 @@ class SVGHoldDetector:
             if self.route_holds and hold_id not in self.route_holds:
                 continue
             
-            # Debug print for hold_203 specifically
-            if hold_id == 'hold_203':
-                logger.info(f"DEBUG: Hold {hold_id} center: {self.hold_centers.get(hold_id, 'N/A')}")
-                logger.info(f"DEBUG: Hold {hold_id} path data: {hold_path_data}")
-                
             # Check if either hand is touching the hold
             left_touching = False
             right_touching = False
             
             if left_hand_pos:
                 left_touching = self._is_hand_touching_hold(left_hand_pos, hold_path_data)
-                if hold_id == 'hold_203':
-                    logger.info(f"DEBUG: Left hand touching hold_203: {left_touching}")
+
             
             if right_hand_pos:
                 right_touching = self._is_hand_touching_hold(right_hand_pos, hold_path_data)
-                if hold_id == 'hold_203':
-                    logger.info(f"DEBUG: Right hand touching hold_203: {right_touching}")
+
             
             is_touching = left_touching or right_touching
             current_status = self.hold_status.get(hold_id, 'untouched')
@@ -510,7 +507,7 @@ class SVGHoldDetector:
         for idx in hand_indices:
             if idx < len(landmarks):
                 landmark = landmarks[idx]
-                if landmark.get('visibility', 0) > 0.5:  # Only use visible landmarks
+                if landmark.get('visibility', 0) > 0.2:  # Only use visible landmarks
                     # The landmarks are already transformed by homography to SVG coordinate space
                     # but we need to account for the different aspect ratios and centering
                     x = landmark['x']
@@ -523,7 +520,7 @@ class SVGHoldDetector:
                     # We need to transform from relative coordinates to SVG coordinate space
                     # First, get actual SVG dimensions
                     actual_svg_width, actual_svg_height = self.svg_parser.get_svg_dimensions()
-                    
+                    logger.info(f"DEBUG: SVG width, height: {actual_svg_width}, {actual_svg_height}")
                     # Transform from relative coordinates to SVG coordinates
                     # Scale up to SVG dimensions and apply centering offset
                     svg_x = x * actual_svg_width
@@ -533,6 +530,7 @@ class SVGHoldDetector:
                     # Both video and SVG are centered when displayed
                     transformed_x = svg_x * self.horizontal_scale_factor - self.coordinate_offset
                     
+                    hand_positions.append((svg_x, svg_y))
                     hand_positions.append((transformed_x, svg_y))
         
         # Debug logging for hand positions
@@ -571,17 +569,10 @@ class SVGHoldDetector:
             center = self.hold_centers[hold_id]
             distance = self._distance(hand_pos, center)
             
-            # Debug logging for hold_203
-            if hold_id == 'hold_203':
-                logger.info(f"DEBUG: Hold {hold_id} distance check:")
-                logger.info(f"  Hand position: {hand_pos}")
-                logger.info(f"  Hold center: {center}")
-                logger.info(f"  Distance: {distance}")
-                logger.info(f"  Proximity threshold: {self.proximity_threshold}")
+
             
             if distance > self.proximity_threshold:
-                if hold_id == 'hold_203':
-                    logger.info(f"DEBUG: Hold {hold_id} - Distance too large, not touching")
+
                 return False
         
         # Then check if hand is actually inside the SVG path
@@ -589,18 +580,11 @@ class SVGHoldDetector:
             path_d = hold_path_data['d']
             is_inside_path = self.svg_parser.point_in_path(hand_pos, path_d)
             
-            # Debug logging for hold_203
-            if hold_id == 'hold_203':
-                logger.info(f"DEBUG: Hold {hold_id} path check:")
-                logger.info(f"  Path data: {path_d[:100]}..." if len(path_d) > 100 else f"  Path data: {path_d}")
-                logger.info(f"  Point in path: {is_inside_path}")
-            
+   
             return is_inside_path
         except Exception as e:
             logger.warning(f"Error checking if hand is inside path for hold {hold_id}: {e}")
             # Fallback to distance-based detection
-            if hold_id == 'hold_203':
-                logger.info(f"DEBUG: Hold {hold_id} - Using fallback distance check: {distance <= self.proximity_threshold}")
             return distance <= self.proximity_threshold
     
     def _distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:

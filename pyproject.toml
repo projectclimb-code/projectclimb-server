@@ -86,4 +86,5 @@ dependencies = [
     "pygame>=2.6.1",
     "pandas>=2.3.3",
     "seaborn>=0.13.2",
+    "svg-py>=1.9.2",
 ]

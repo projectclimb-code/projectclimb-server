@@ -348,6 +348,7 @@ dependencies = [
     { name = "setuptools" },
     { name = "sqlparse" },
     { name = "stack-data" },
+    { name = "svg-py" },
     { name = "svglib" },
     { name = "torch" },
     { name = "torchvision" },
@@ -433,6 +434,7 @@ requires-dist = [
     { name = "setuptools", specifier = "==80.8.0" },
     { name = "sqlparse", specifier = "==0.5.3" },
     { name = "stack-data", specifier = "==0.6.3" },
+    { name = "svg-py", specifier = ">=1.9.2" },
     { name = "svglib", specifier = ">=1.6.0" },
     { name = "torch", specifier = ">=2.8.0" },
     { name = "torchvision", specifier = ">=0.23.0" },
@@ -2280,6 +2282,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707, upload-time = "2023-09-30T13:58:05.479Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521, upload-time = "2023-09-30T13:58:03.53Z" },
+]
+
+[[package]]
+name = "svg-py"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/42/20b79492579b45437d29231f65356728e6208846924ef4ced86e88a0f31b/svg_py-1.9.2.tar.gz", hash = "sha256:22b9881c580f55bf9d02e1a2c2d65ed05ed7d8a7d5467e847c5e1197ae0e3a9f", size = 43711, upload-time = "2025-10-18T09:01:04.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/74/86c10415be3767718311763a1023717ebd9f929470e97a898c96b7c3f64b/svg_py-1.9.2-py3-none-any.whl", hash = "sha256:9178310947b62f0f2b41d1248a734c25ddf4df87d817c17f048d06fe18fcbf46", size = 15142, upload-time = "2025-10-18T09:01:02.792Z" },
 ]
 
 [[package]]

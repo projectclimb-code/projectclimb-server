@@ -589,10 +589,23 @@ class PoseSkeletonVisualizer {
                         const completedHolds = session.holds ? session.holds.filter(h => h.status === 'completed').length : 0;
                         const totalHolds = session.holds ? session.holds.length : 0;
                         
+                        // Extract wrist coordinates (MediaPipe indices: 15=left wrist, 16=right wrist)
+                        const leftWrist = landmarks.find(l => l.visibility > 0.1 && [15, 16].includes(parseInt(l.index || 0)));
+                        const rightWrist = landmarks.find(l => l.visibility > 0.1 && [15, 16].includes(parseInt(l.index || 0)));
+                        
+                        let wristInfo = '';
+                        if (leftWrist && leftWrist.index === 17) {
+                            wristInfo += `<div>Left Wrist: (${leftWrist.x.toFixed(2)}, ${leftWrist.y.toFixed(2)})</div>`;
+                        }
+                        if (rightWrist && rightWrist.index === 18) {
+                            wristInfo += `<div>Right Wrist: (${rightWrist.x.toFixed(2)}, ${rightWrist.y.toFixed(2)})</div>`;
+                        }
+                        
                         detailsDiv.innerHTML = `
                             <div>Session Status: ${session.status || 'Unknown'}</div>
                             <div>Completed Holds: ${completedHolds}/${totalHolds}</div>
                             <div>Visible landmarks: ${landmarks.filter(l => l.visibility > 0.5).length}</div>
+                            <div>Wrists: ${wristInfo}</div>
                             ${session.startTime ? `<div>Start: ${new Date(session.startTime).toLocaleTimeString()}</div>` : ''}
                         `;
                     }

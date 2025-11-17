@@ -626,8 +626,8 @@ document.addEventListener('DOMContentLoaded', function() {
         getWallImageBtn.addEventListener('click', function() {
             // Create WebSocket connection
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/pose/`;
-            
+            //const wsUrl = `${protocol}//${window.location.host}/ws/pose/`;
+            const wsUrl = "ws://192.168.88.2:8011/ws/pose/"
             console.log('Connecting to WebSocket:', wsUrl);
             
             const socket = new WebSocket(wsUrl);
