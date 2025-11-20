@@ -14,7 +14,7 @@ from .views import (
     SessionRecordingViewSet, WallCalibrationViewSet,
     TaskManagementView, trigger_fake_session_task, get_task_status,
     wall_upload_svg, wall_upload_image, wall_capture_camera_image,
-    WallAnimationView, DemoView, api_upload_wall_image,
+    WallAnimationView, DemoView, api_upload_wall_image, session_start, session_stop, get_running_tasks
 )
 from .calibration.views import (
     wall_calibration_list, calibration_create, calibration_detail,
@@ -114,11 +114,16 @@ urlpatterns = [
     path('sessions/<uuid:pk>/', SessionDetailView.as_view(), name='session_detail'),
     path('sessions/<uuid:pk>/delete/', SessionDeleteView.as_view(), name='session_delete'),
     path('sessions/<uuid:pk>/replay/', SessionReplayView.as_view(), name='session_replay'),
+
+    path('api/start_session/<int:route_id>/', session_start, name='start_session'),
+    path('api/start_stop/', session_stop, name='stop_session'),
+
     
     # Task Management URLs
     path('tasks/', TaskManagementView.as_view(), name='task_management'),
     path('tasks/trigger-fake-session/', trigger_fake_session_task, name='trigger_fake_session_task'),
     path('tasks/status/<str:task_id>/', get_task_status, name='get_task_status'),
+    path('api/running-tasks/', get_running_tasks, name='get_running_tasks'),
     
     # Demo Page
     path('demo/', DemoView.as_view(), name='demo'),

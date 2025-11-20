@@ -1,118 +1,163 @@
 {% extends "base.html" %}
-{% load tailwind_tags %}
+
+{% block title %}Task Management{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold text-gray-900 mb-8">Task Management</h1>
+<div class="container mx-auto py-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-6">Session Tracker Management</h1>
+    
+    <!-- Running Trackers Section -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-8" id="running-trackers-section">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Running Session Trackers</h2>
         
-        <!-- Fake Session Data Task Section -->
-        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Send Fake Session Data</h2>
-            <p class="text-gray-600 mb-6">
-                This task sends fake climbing session data to the WebSocket for testing purposes.
-                The task runs in the background using Celery.
-            </p>
-            
-            <form id="fake-session-form" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="session_id" class="block text-sm font-medium text-gray-700 mb-1">
-                            Session ID (optional)
-                        </label>
-                        <input type="text" id="session_id" name="session_id" 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Leave empty to create a new session">
-                    </div>
-                    
-                    <div>
-                        <label for="duration" class="block text-sm font-medium text-gray-700 mb-1">
-                            Duration (seconds)
-                        </label>
-                        <input type="number" id="duration" name="duration" value="60" min="10" max="300"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="ws_url" class="block text-sm font-medium text-gray-700 mb-1">
-                            WebSocket URL
-                        </label>
-                        <input type="text" id="ws_url" name="ws_url" 
-                               value="ws://localhost:8000/ws/session-live/"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    
-                    <div class="flex items-center pt-6">
-                        <input type="checkbox" id="create_session" name="create_session" 
-                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                        <label for="create_session" class="ml-2 block text-sm text-gray-900">
-                            Create new session
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="flex justify-end">
-                    <button type="submit" 
-                            class="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                        Start Task
-                    </button>
-                </div>
-            </form>
-        </div>
+        {% include "climber/partials/running_trackers_table.html" %}
+    </div>
+    
+    <!-- Start New Session Section -->
+    <div class="bg-white shadow-md rounded-lg p-6 mb-8">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Start New Session</h2>
         
-        <!-- Task Status Section -->
-        <div id="task-status" class="bg-white shadow-md rounded-lg p-6 hidden">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Task Status</h2>
-            
-            <div class="space-y-3">
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Task ID:</span>
-                    <span id="status-task-id" class="text-gray-600"></span>
+        <form method="post" action="/tasks/" class="space-y-4">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="wall_id" class="block text-sm font-medium text-gray-700 mb-2">Wall</label>
+                    <select id="wall_id" name="wall_id" required
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">Select a wall...</option>
+                        {% for wall in walls %}
+                            <option value="{{ wall.id }}">{{ wall.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Status:</span>
-                    <span id="status-status" class="text-gray-600"></span>
-                </div>
-                
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Message:</span>
-                    <span id="status-message" class="text-gray-600"></span>
-                </div>
-                
-                <div id="progress-container" class="hidden">
-                    <div class="flex justify-between mb-1">
-                        <span class="font-medium text-gray-700">Progress:</span>
-                        <span id="progress-text" class="text-gray-600"></span>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5">
-                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                    </div>
+                <div>
+                    <label for="route_id" class="block text-sm font-medium text-gray-700 mb-2">Route</label>
+                    <select id="route_id" name="route_id" required
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">Select a route...</option>
+                        {% for route in routes %}
+                            <option value="{{ route.id }}">{{ route.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
             
-            <div class="mt-6 flex justify-end space-x-3">
-                <button id="refresh-status" 
-                        class="px-4 py-2 bg-gray-600 text-white font-medium rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                    Refresh Status
-                </button>
-                <button id="clear-status" 
-                        class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                    Clear
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="input_websocket_url" class="block text-sm font-medium text-gray-700 mb-2">Input WebSocket URL</label>
+                    <input type="text" id="input_websocket_url" name="input_websocket_url"
+                           value="ws://localhost:8000/ws/pose/"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                
+                <div>
+                    <label for="output_websocket_url" class="block text-sm font-medium text-gray-700 mb-2">Output WebSocket URL</label>
+                    <input type="text" id="output_websocket_url" name="output_websocket_url"
+                           value="ws://localhost:8000/ws/session/"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="proximity_threshold" class="block text-sm font-medium text-gray-700 mb-2">Proximity Threshold (px)</label>
+                    <input type="number" id="proximity_threshold" name="proximity_threshold" 
+                           value="50.0" step="0.1" min="0"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                
+                <div>
+                    <label for="touch_duration" class="block text-sm font-medium text-gray-700 mb-2">Touch Duration (s)</label>
+                    <input type="number" id="touch_duration" name="touch_duration" 
+                           value="2.0" step="0.1" min="0"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                
+                <div>
+                    <label for="reconnect_delay" class="block text-sm font-medium text-gray-700 mb-2">Reconnect Delay (s)</label>
+                    <input type="number" id="reconnect_delay" name="reconnect_delay" 
+                           value="5.0" step="0.1" min="0"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </div>
+            
+            <div class="flex items-center">
+                <input type="checkbox" id="debug" name="debug" value="false" 
+                       class="h-4 w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="debug" class="ml-2 block text-sm text-gray-700">Debug Mode</label>
+            </div>
+            
+            <div class="flex items-center">
+                <input type="checkbox" id="no_stream_landmarks" name="no_stream_landmarks" value="false" 
+                       class="h-4 w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="no_stream_landmarks" class="ml-2 block text-sm text-gray-700">Don't Stream Landmarks</label>
+            </div>
+            
+            <div class="flex items-center">
+                <input type="checkbox" id="stream_svg_only" name="stream_svg_only" value="false" 
+                       class="h-4 w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="stream_svg_only" class="ml-2 block text-sm text-gray-700">Stream SVG Only</label>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <button type="submit" name="action" value="start_session" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ease-in-out">
+                    Start Session
                 </button>
             </div>
-        </div>
+        </form>
+    </div>
+    
+    <!-- Worker Status Section -->
+    <div class="bg-yellow-50 border border border-yellow-200 text-yellow-700 px-4 py-3 rounded mb-6">
+        <p class="font-medium">⚠️ Important: Celery Worker Required</p>
+        <p class="text-sm">For tasks to actually run, you need to start a Celery worker in a separate terminal:</p>
+        <code class="block p-2 bg-gray-800 text-sm text-gray-100 rounded mt-2">cd code && uv run celery -A app worker -l info</code>
+        <p class="text-xs mt-2">Keep this terminal open while using the task management interface.</p>
+    </div>
+    
+    <!-- API Status Section -->
+    <div class="bg-white shadow-md rounded-lg p-6">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">API Status</h2>
         
-        <!-- Instructions Section -->
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-8">
-            <div class="flex">
-                <div class="ml-3">
-                    <p class="text-sm text-blue-700">
-                        <strong>Note:</strong> Make sure Celery worker is running for tasks to execute.
-                        You can start it with: <code class="bg-blue-100 px-1 py-0.5 rounded">celery -A app worker -l info</code>
-                    </p>
+        <div class="space-y-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-700 mb-2">Running Tasks API</h3>
+                <div class="bg-gray-100 p-4 rounded">
+                    <p class="text-sm text-gray-600 mb-2">Get all running session trackers:</p>
+                    <code class="block p-2 bg-gray-800 text-sm text-gray-100 rounded">GET /api/running-tasks/</code>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="text-lg font-medium text-gray-700 mb-2">Start Session API</h3>
+                <div class="bg-gray-100 p-4 rounded">
+                    <p class="text-sm text-gray-600 mb-2">Start a new session tracker:</p>
+                    <code class="block p-2 bg-gray-800 text-sm text-gray-100 rounded">GET /api/start_session/<route_id>/</code>
+                    <p class="text-xs text-gray-500 mt-1">Query parameters:</p>
+                    <ul class="list-disc list-inside text-sm text-gray-600 ml-4">
+                        <li><code class="text-gray-700">input_websocket_url</code> - WebSocket URL for pose input</li>
+                        <li><code class="text-gray-700">output_websocket_url</code> - WebSocket URL for session output</li>
+                        <li><code class="text-gray-700">proximity_threshold</code> - Hold proximity threshold (default: 50.0)</li>
+                        <li><code class="text-gray-700">touch_duration</code> - Touch duration in seconds (default: 2.0)</li>
+                        <li><code class="text-gray-700">reconnect_delay</code> - Reconnect delay in seconds (default: 5.0)</li>
+                        <li><code class="text-gray-700">debug</code> - Enable debug mode (default: false)</li>
+                        <li><code class="text-gray-700">no_stream_landmarks</code> - Don't stream landmarks (default: false)</li>
+                        <li><code class="text-gray-700">stream_svg_only</code> - Stream SVG only (default: false)</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="text-lg font-medium text-gray-700 mb-2">Stop Session API</h3>
+                <div class="bg-gray-100 p-4 rounded">
+                    <p class="text-sm text-gray-600 mb-2">Stop a running session tracker:</p>
+                    <code class="block p-2 bg-gray-800 text-sm text-gray-100 rounded">GET /api/start_stop/?task_id=<task_id></code>
+                    <p class="text-xs text-gray-500 mt-1">Query parameters:</p>
+                    <ul class="list-disc list-inside text-sm text-gray-600 ml-4">
+                        <li><code class="text-gray-700">task_id</code> - ID of task to stop (optional, will stop first running task if not provided)</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -120,105 +165,127 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('fake-session-form');
-    const taskStatusDiv = document.getElementById('task-status');
-    const refreshBtn = document.getElementById('refresh-status');
-    const clearBtn = document.getElementById('clear-status');
-    let currentTaskId = null;
-    let statusInterval = null;
-    
-    // Form submission
-    form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(form);
-        
-        fetch('{% url "trigger_fake_session_task" %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
             }
+        }
+    }
+    return cookieValue;
+}
+
+function stopTask(taskId) {
+    if (confirm('Are you sure you want to stop this session tracker?')) {
+        // Send POST request to stop the task
+        fetch('/tasks/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCookie('csrftoken'),
+                'HX-Request': 'true'  // Add HTMX header
+            },
+            body: new URLSearchParams({
+                'action': 'stop_session',
+                'task_id': taskId
+            }).toString()
         })
-        .then(response => response.json())
+        .then(response => {
+            // Check if response has location header before parsing
+            const location = response.headers.get('Location');
+            if (location) {
+                // If redirected, follow the redirect
+                window.location.href = location;
+                return;
+            }
+            
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
-                currentTaskId = data.task_id;
-                showTaskStatus(data);
-                startStatusPolling();
+            if (data.success) {
+                // Refresh the trackers table instead of reloading the page
+                htmx.ajax('/tasks/', {
+                    method: 'GET',
+                    headers: {
+                        'HX-Trigger': 'running-trackers-table'
+                    },
+                    target: '#running-trackers-table',
+                    swap: 'innerHTML'
+                });
             } else {
-                alert('Error: ' + data.message);
+                alert('Error stopping task: ' + data.error);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('An error occurred while starting the task.');
+            alert('Error stopping task: ' + error);
         });
-    });
-    
-    // Refresh status button
-    refreshBtn.addEventListener('click', function() {
-        if (currentTaskId) {
-            fetchTaskStatus(currentTaskId);
-        }
-    });
-    
-    // Clear status button
-    clearBtn.addEventListener('click', function() {
-        taskStatusDiv.classList.add('hidden');
-        currentTaskId = null;
-        stopStatusPolling();
-    });
-    
-    function showTaskStatus(data) {
-        taskStatusDiv.classList.remove('hidden');
-        document.getElementById('status-task-id').textContent = data.task_id || '';
-        document.getElementById('status-status').textContent = data.status || '';
-        document.getElementById('status-message').textContent = data.message || '';
-        
-        if (data.status === 'PROGRESS' && data.progress !== undefined) {
-            document.getElementById('progress-container').classList.remove('hidden');
-            document.getElementById('progress-text').textContent = `${data.progress}%`;
-            document.getElementById('progress-bar').style.width = `${data.progress}%`;
-        } else {
-            document.getElementById('progress-container').classList.add('hidden');
-        }
     }
-    
-    function fetchTaskStatus(taskId) {
-        fetch(`{% url "get_task_status" task_id="PLACEHOLDER" %}`.replace('PLACEHOLDER', taskId))
-        .then(response => response.json())
-        .then(data => {
-            showTaskStatus(data);
+}
+
+// Auto-refresh the running trackers table every 5 seconds to show updated tracker status
+setInterval(() => {
+    // Use HTMX to refresh just the trackers table
+    htmx.ajax('/tasks/', {
+        method: 'GET',
+        headers: {
+            'HX-Trigger': 'running-trackers-table'
+        },
+        target: '#running-trackers-table',
+        swap: 'innerHTML'
+    });
+}, 5000);
+
+// Handle form submission with HTMX to avoid page reload
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form[method="post"]');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
             
-            // Stop polling if task is complete
-            if (data.status === 'SUCCESS' || data.status === 'FAILURE') {
-                stopStatusPolling();
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching task status:', error);
+            const formData = new FormData(form);
+            formData.append('HX-Request', 'true');
+            
+            fetch('/tasks/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'HX-Request': 'true'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Clear the form
+                    form.reset();
+                    // Refresh the trackers table
+                    htmx.ajax('/tasks/', {
+                        method: 'GET',
+                        headers: {
+                            'HX-Trigger': 'running-trackers-table'
+                        },
+                        target: '#running-trackers-table',
+                        swap: 'innerHTML'
+                    });
+                    // Show success message
+                    alert('Session started successfully!');
+                } else {
+                    alert('Error starting session: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error starting session: ' + error);
+            });
         });
-    }
-    
-    function startStatusPolling() {
-        // Poll every 2 seconds
-        statusInterval = setInterval(() => {
-            if (currentTaskId) {
-                fetchTaskStatus(currentTaskId);
-            }
-        }, 2000);
-    }
-    
-    function stopStatusPolling() {
-        if (statusInterval) {
-            clearInterval(statusInterval);
-            statusInterval = null;
-        }
     }
 });
 </script>
-
-{% csrf_token %}
 {% endblock %}

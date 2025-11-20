@@ -14,8 +14,10 @@ from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRe
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
 from django.contrib.auth.models import User
 from django.conf import settings
+from loguru import logger
 
-from .tasks import send_fake_session_data_task
+from .tasks import send_fake_session_data_task, websocket_pose_session_tracker_task, stop_session_tracker_task, get_running_session_trackers
+from app.celery_config import celery_app
 
 from revproxy.views import ProxyView
 
@@ -738,7 +740,125 @@ class TaskManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Add any context data needed for the task management page
+        # Get running session trackers
+        try:
+            running_trackers_result = get_running_session_trackers()
+            context['running_trackers'] = running_trackers_result.get('trackers', [])
+            context['trackers_status'] = 'success'
+        except Exception as e:
+            context['running_trackers'] = []
+            context['trackers_status'] = 'error'
+            context['trackers_error'] = str(e)
+        
+        # Get walls and routes for dropdowns
+        context['walls'] = Wall.objects.all()
+        context['routes'] = Route.objects.all()
+        
         return context
+    
+    def get(self, request, *args, **kwargs):
+        """Handle GET requests"""
+        context = self.get_context_data(**kwargs)
+        
+        # Check if this is an HTMX request for just the trackers table
+        if request.headers.get('HX-Trigger') == 'running-trackers-table':
+            return render(request, 'climber/partials/running_trackers_table.html', context)
+        
+        return render(request, self.template_name, context)
+    
+    def post(self, request, *args, **kwargs):
+        """Handle POST requests for starting/stopping tasks"""
+        action = request.POST.get('action')
+        
+        if action == 'start_session':
+            response = self.handle_start_session(request)
+            # Return HTMX response if requested
+            if request.headers.get('HX-Request') == 'true':
+                response['HX-Trigger'] = 'running-trackers-table'
+            return response
+        elif action == 'stop_session':
+            response = self.handle_stop_session(request)
+            # Return HTMX response if requested
+            if request.headers.get('HX-Request') == 'true':
+                response['HX-Trigger'] = 'running-trackers-table'
+            return response
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid action'
+            }, status=400)
+    
+    def handle_start_session(self, request):
+        """Handle starting a new session"""
+        try:
+            route_id = request.POST.get('route_id')
+            wall_id = request.POST.get('wall_id')
+            input_websocket_url = request.POST.get('input_websocket_url', 'ws://localhost:8001/ws/pose/')
+            output_websocket_url = request.POST.get('output_websocket_url', 'ws://localhost:8002/ws/session/')
+            proximity_threshold = float(request.POST.get('proximity_threshold', 50.0))
+            touch_duration = float(request.POST.get('touch_duration', 2.0))
+            reconnect_delay = float(request.POST.get('reconnect_delay', 5.0))
+            debug = request.POST.get('debug', 'false').lower() == 'true'
+            no_stream_landmarks = request.POST.get('no_stream_landmarks', 'false').lower() == 'true'
+            stream_svg_only = request.POST.get('stream_svg_only', 'false').lower() == 'true'
+            
+            if not route_id or not wall_id:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Route ID and Wall ID are required'
+                }, status=400)
+            
+            # Start Celery task
+            task = websocket_pose_session_tracker_task.delay(
+                wall_id=int(wall_id),
+                input_websocket_url=input_websocket_url,
+                output_websocket_url=output_websocket_url,
+                proximity_threshold=proximity_threshold,
+                touch_duration=touch_duration,
+                reconnect_delay=reconnect_delay,
+                debug=debug,
+                no_stream_landmarks=no_stream_landmarks,
+                stream_svg_only=stream_svg_only,
+                route_id=int(route_id)
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Session started successfully',
+                'task_id': task.id
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Error starting session: {str(e)}'
+            }, status=500)
+    
+    def handle_stop_session(self, request):
+        """Handle stopping a running session"""
+        try:
+            task_id = request.POST.get('task_id')
+            
+            if not task_id:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Task ID is required'
+                }, status=400)
+            
+            # Stop the task
+            result = stop_session_tracker_task.delay(task_id)
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Session stop requested',
+                'result': result
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Error stopping session: {str(e)}'
+            }, status=500)
 
 
 #@login_required
@@ -902,3 +1022,150 @@ class ClientProxyView(ProxyView):
     rewrite = (
         (r'^/client/(.*)$', r'\1'),
      )
+    
+
+
+
+
+@api_view(['GET', 'POST'])
+#@permission_classes([IsAuthenticated])
+def session_start(request, route_id):
+    """
+    API endpoint to start new session in separate
+    thread/celery task
+    """
+    try:
+        # Get data from request
+        route = Route.objects.get(id=route_id)
+        print(f"Starting session {route_id}")
+        
+        # Get query parameters
+        input_websocket_url = request.GET.get('input_websocket_url', None)
+        output_websocket_url = request.GET.get('output_websocket_url', None)
+        proximity_threshold = float(request.GET.get('proximity_threshold', 50.0))
+        touch_duration = float(request.GET.get('touch_duration', .2))
+        reconnect_delay = float(request.GET.get('reconnect_delay', 5.0))
+        debug = request.GET.get('debug', 'false').lower() == 'true'
+        no_stream_landmarks = request.GET.get('no_stream_landmarks', 'false').lower() == 'true'
+        stream_svg_only = request.GET.get('stream_svg_only', 'false').lower() == 'true'
+        
+        # Get the wall from the route (assuming route has a wall relationship)
+        # For now, we'll use the first wall as a fallback
+        try:
+            wall = Wall.objects.first()
+            if not wall:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No walls found in the database'
+                }, status=400)
+            wall_id = wall.id
+        except Exception as e:
+            logger.error(f"Error getting wall: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error getting wall: {str(e)}'
+            }, status=500)
+        
+        # Start the Celery task
+        try:
+            task = websocket_pose_session_tracker_task.apply_async(
+                wall_id=wall_id,
+                input_websocket_url=input_websocket_url or 'ws://localhost:8001/ws/pose/',
+                output_websocket_url=output_websocket_url or 'ws://localhost:8002/ws/session/',
+                proximity_threshold=proximity_threshold,
+                touch_duration=touch_duration,
+                reconnect_delay=reconnect_delay,
+                debug=debug,
+                no_stream_landmarks=no_stream_landmarks,
+                stream_svg_only=stream_svg_only,
+                route_id=route_id
+            )
+            logger.info(f"Task started with ID: {task.id}")
+        except Exception as e:
+            logger.error(f"Error starting Celery task: {e}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error starting task: {str(e)}'
+            }, status=500)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Session started',
+            'task_id': task.id,
+            'wall_id': wall_id,
+            'input_websocket_url': input_websocket_url,
+            'output_websocket_url': output_websocket_url
+        })
+        
+
+    except Exception as e:
+        logger.error(f"Error starting session: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }, status=500)
+
+
+
+@api_view(['GET'])
+#@permission_classes([IsAuthenticated])
+def session_stop(request):
+    """
+    API endpoint to stop any active session tracker task
+    """
+    try:
+        # Get task_id from query parameters
+        task_id = request.GET.get('task_id')
+        
+        if not task_id:
+            # Get all running trackers and stop the first one
+            trackers_result = get_running_session_trackers()
+            if trackers_result['status'] == 'success' and trackers_result['trackers']:
+                # Get the first running task
+                task_id = list(trackers_result['trackers'].keys())[0]
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No active session trackers found'
+                }, status=404)
+        
+        # Stop the task
+        result = stop_session_tracker_task.delay(task_id)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Session stopped',
+            'task_id': task_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error stopping session: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }, status=500)
+
+
+@api_view(['GET'])
+#@permission_classes([IsAuthenticated])
+def get_running_tasks(request):
+    """
+    API endpoint to get all running session tracker tasks.
+    
+    Returns:
+        JSON response with list of running trackers
+    """
+    try:
+        result = get_running_session_trackers()
+        return JsonResponse({
+            'success': True,
+            'trackers': result.get('trackers', [])
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting running tasks: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }, status=500)
+

@@ -198,3 +198,23 @@ class WallCalibration(BaseModel):
         ordering = ['-created']
 
 
+class CeleryTask(models.Model):
+    """Model to track running Celery tasks"""
+    task_id = models.CharField(max_length=255, unique=True)
+    task_name = models.CharField(max_length=100)
+    status = models.CharField(max_length=20, default='pending')
+    started_at = models.DateTimeField(null=True, blank=True)
+    wall_id = models.IntegerField(null=True, blank=True)
+    route_id = models.IntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'climber_celery_task'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.task_name} ({self.task_id})"
+
+

@@ -6,7 +6,6 @@ import os
 import numpy as np
 from datetime import datetime, timezone, timedelta
 from celery import shared_task
-from app.celery_config import celery_app
 from django.contrib.auth.models import User
 from django.conf import settings
 from channels.db import database_sync_to_async
@@ -229,7 +228,6 @@ def websocket_pose_session_tracker_task(self, wall_id, input_websocket_url, outp
         task_id = self.request.id
         
         # Create database record for this task
-        logger.info(f"Creating CeleryTask record for task_id: {task_id}")
         CeleryTask.objects.update_or_create(
             task_id=task_id,
             task_name='WebSocket Pose Session Tracker',
@@ -237,7 +235,6 @@ def websocket_pose_session_tracker_task(self, wall_id, input_websocket_url, outp
             wall_id=wall_id,
             route_id=route_id
         )
-        logger.info(f"CeleryTask record created for task_id: {task_id}")
         
         # Update task status
         self.update_state(state='PROGRESS', meta={'status': 'Initializing session tracker...'})
@@ -598,16 +595,6 @@ class WebSocketPoseSessionTrackerCelery:
         self.start_time = time.time()
         
         try:
-            # Check if WebSocket URLs are provided
-            if not self.input_websocket_url or not self.output_websocket_url:
-                logger.warning("WebSocket URLs not provided, running in test mode without connections")
-                if self.task:
-                    self.task.update_state(
-                        state='SUCCESS',
-                        meta={'status': 'Test mode completed - no WebSocket connections'}
-                    )
-                return {'status': 'success', 'message': 'Test mode completed'}
-            
             # Start WebSocket clients
             input_task = self.input_client.start()
             output_task = self.output_client.start()
@@ -619,7 +606,7 @@ class WebSocketPoseSessionTrackerCelery:
             logger.error(f"Error in main loop: {e}")
             if self.task:
                 self.task.update_state(
-                    state='FAILURE',
+                    state='FAILURE', 
                     meta={'status': f'Error in main loop: {e}'}
                 )
         finally:
@@ -648,74 +635,77 @@ class WebSocketPoseSessionTrackerCelery:
         logger.info("Cleanup complete")
 
 
-
-
+@shared_task
 def stop_session_tracker_task(task_id):
     """
-    Stop a running session tracker task.
+    Stop a running session tracker task by ID.
     
     Args:
         task_id: ID of the task to stop
-        
-    Returns:
-        Dictionary with status and message
     """
     try:
-        # Update task status in database
-        task = CeleryTask.objects.filter(task_id=task_id).first()
-        if task:
-            task.status = 'stopped'
-            task.save()
-        
-        # Revoke the Celery task
-        from celery import current_app
-        current_app.control.revoke(task_id, terminate=True)
-        
-        logger.info(f"Stopped session tracker task: {task_id}")
-        return {
-            'status': 'success',
-            'message': f'Task {task_id} stopped successfully'
-        }
+        if task_id in running_session_trackers:
+            tracker_info = running_session_trackers[task_id]
+            tracker_info['status'] = 'stopping'
+            
+            # Revoke the task
+            from celery import current_app
+            current_app.control.revoke(task_id, terminate=True)
+            
+            # Remove from tracking
+            del running_session_trackers[task_id]
+            
+            return {
+                'status': 'success',
+                'message': f'Session tracker task {task_id} stopped'
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Session tracker task {task_id} not found'
+            }
     except Exception as e:
-        logger.error(f"Error stopping task {task_id}: {e}")
         return {
             'status': 'error',
             'message': f'Error stopping task: {e}'
         }
 
 
+@shared_task
 def get_running_session_trackers():
     """
-    Get all running session tracker tasks.
+    Get list of running session tracker tasks.
     
     Returns:
-        List of dictionaries with task information
+        Dictionary with running tracker information
     """
     try:
         # Get all running tasks from database
-        tasks = CeleryTask.objects.filter(
-            status__in=['initializing', 'running']
-        ).order_by('-created_at')
+        running_tasks = CeleryTask.objects.filter(status__in=['initializing', 'running'])
         
-        result = []
-        for task in tasks:
-            result.append({
+        trackers = {}
+        for task in running_tasks:
+            # Calculate elapsed time
+            elapsed_time = None
+            if task.started_at:
+                elapsed_time = (datetime.now() - task.started_at).total_seconds()
+            
+            trackers[task.task_id] = {
                 'task_id': task.task_id,
                 'task_name': task.task_name,
-                'status': task.status,
                 'wall_id': task.wall_id,
                 'route_id': task.route_id,
-                'created_at': task.created_at.isoformat() if task.created_at else None,
-                'updated_at': task.updated_at.isoformat() if task.updated_at else None
-            })
+                'started_at': task.started_at.isoformat() if task.started_at else None,
+                'status': task.status,
+                'elapsed_time': elapsed_time
+            }
         
         return {
             'status': 'success',
-            'trackers': result
+            'trackers': trackers
         }
     except Exception as e:
-        logger.error(f"Error getting running tasks: {e}")
         return {
             'status': 'error',
-            'trackers': []
+            'message': f'Error getting running trackers: {e}'
         }

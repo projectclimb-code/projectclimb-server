@@ -29,9 +29,9 @@ SECRET_KEY = 'django-insecure-jv2fhy*n4&512-y=a=wtoevu7^5=_lpc&hd=%(wda__h%!+(hq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4', 'climber.g8.maptnh.net']
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net',]
+CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net','https://climber.g8.maptnh.net', 'http://192.168.88.2']
 # Application definition
 
 INSTALLED_APPS = [
@@ -65,16 +65,18 @@ PLAYER_URL =  env('PLAYER_URL')
 
 # Celery Configuration
 
-REDIS_HOST =  env('REDIS_HOST')
+REDIS_HOST = env('REDIS_HOST', default='localhost')
 
 TIME_ZONE = 'Europe/Ljubljana'
 
-CELERY_BROKER_URL = f'redis://{REDIS_HOST}:6379/0'
-CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:6379/0'
+# Use Redis for Celery broker and result backend
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default=f'redis://{REDIS_HOST}:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=f'redis://{REDIS_HOST}:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TIME_LIMIT = 12 * 60 * 60 # 12 hours
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -223,3 +225,6 @@ CHANNEL_LAYERS = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 USE_X_FORWARDED_HOST=True
+
+WS_POSE_URL = env('WS_POSE_URL')
+WS_HOLDS_URL = env('WS_HOLDS_URL') 
