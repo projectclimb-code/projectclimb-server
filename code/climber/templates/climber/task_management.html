@@ -13,15 +13,27 @@
                 Currently running background tasks. Click "Refresh Status" to update their status.
             </p>
             
-            <div id="running-tasks" class="space-y-4">
-                <div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>
+            <div class="flex justify-between items-start mb-4">
+                <div class="flex-1">
+                    <h3 class="text-lg font-medium text-gray-800 mb-2">Running Tasks</h3>
+                    <p class="text-sm text-gray-600">
+                        Currently running background tasks. Click "Refresh Status" to update their status.
+                    </p>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="kill-all-tasks-top"
+                            class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                        Kill All Tasks
+                    </button>
+                    <button id="refresh-running-tasks"
+                            class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        Refresh Status
+                    </button>
+                </div>
             </div>
             
-            <div class="mt-4 flex justify-end">
-                <button id="refresh-running-tasks"
-                        class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    Refresh Status
-                </button>
+            <div id="running-tasks" class="space-y-4">
+                <div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>
             </div>
         </div>
         
@@ -89,6 +101,20 @@
                 detects hold touches based on hand proximity to SVG paths, and outputs session data to an output WebSocket.
                 The task runs in the background using Celery with the specified default values.
             </p>
+            
+            <!-- Quick Start Task Section -->
+            <div class="bg-gray-50 p-4 rounded-md mb-6">
+                <h3 class="text-lg font-medium text-gray-800 mb-2">Quick Start Task</h3>
+                <p class="text-sm text-gray-600 mb-4">
+                    Start a task with route ID 90 using default values for quick testing.
+                </p>
+                <div class="flex justify-end">
+                    <button id="quick-start-task"
+                            class="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                        Start Task with Route 90
+                    </button>
+                </div>
+            </div>
             
             <div class="bg-gray-50 p-4 rounded-md mb-6">
                 <h3 class="text-lg font-medium text-gray-800 mb-2">Default Configuration:</h3>
@@ -230,11 +256,15 @@
             </div>
             
             <div class="mt-6 flex justify-end space-x-3">
-                <button id="refresh-status" 
+                <button id="kill-all-tasks"
+                        class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    Kill All Tasks
+                </button>
+                <button id="refresh-status"
                         class="px-4 py-2 bg-gray-600 text-white font-medium rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
                     Refresh Status
                 </button>
-                <button id="clear-status" 
+                <button id="clear-status"
                         class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                     Clear
                 </button>
@@ -262,6 +292,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const refreshBtn = document.getElementById('refresh-status');
     const clearBtn = document.getElementById('clear-status');
     const refreshRunningTasksBtn = document.getElementById('refresh-running-tasks');
+    const killAllTasksBtn = document.getElementById('kill-all-tasks');
+    const killAllTasksTopBtn = document.getElementById('kill-all-tasks-top');
     let currentTaskId = null;
     let statusInterval = null;
     
@@ -272,38 +304,100 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(fetchRunningTasks, 1000);
     
     // Refresh running tasks
-    refreshRunningTasksBtn.addEventListener('click', function() {
-        fetchRunningTasks();
-    });
+    if (refreshRunningTasksBtn) {
+        refreshRunningTasksBtn.addEventListener('click', function() {
+            fetchRunningTasks();
+        });
+    }
+    
+    // Kill all tasks (both buttons)
+    function setupKillAllTasksHandler() {
+        const handler = function() {
+            if (confirm('Are you sure you want to kill all running tasks? This action cannot be undone.')) {
+                fetch('{% url "kill_all_tasks" %}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('All running tasks killed successfully!');
+                        fetchRunningTasks(); // Refresh the task list
+                    } else {
+                        alert('Error killing tasks: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error killing tasks:', error);
+                    alert('An error occurred while killing tasks.');
+                });
+            }
+        };
+        
+        // Attach to both buttons
+        if (killAllTasksBtn) {
+            killAllTasksBtn.addEventListener('click', handler);
+        }
+        if (killAllTasksTopBtn) {
+            killAllTasksTopBtn.addEventListener('click', handler);
+        }
+    }
+    
+    setupKillAllTasksHandler();
     
     // WebSocket tracker form submission
-    websocketTrackerForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(websocketTrackerForm);
-        
-        fetch('{% url "trigger_websocket_tracker_task" %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                currentTaskId = data.task_id;
-                showTaskStatus(data);
-                startStatusPolling();
-            } else {
-                alert('Error: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while starting WebSocket tracker task.');
+    if (websocketTrackerForm) {
+        websocketTrackerForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(websocketTrackerForm);
+            
+            fetch('{% url "trigger_websocket_tracker_task" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    currentTaskId = data.task_id;
+                    showTaskStatus(data);
+                    startStatusPolling();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while starting WebSocket tracker task.');
+            });
         });
-    });
+    }
+    
+    // Quick start task with route 90
+    function quickStartTaskWithRoute90() {
+        // Set route_id to 90 in the form
+        const routeSelect = document.getElementById('tracker_route_id');
+        if (routeSelect) {
+            routeSelect.value = '90';
+        }
+        
+        // Submit the form
+        const form = document.getElementById('websocket-tracker-form');
+        if (form) {
+            form.dispatchEvent(new Event('submit'));
+        }
+    }
+    
+    // Quick start task button handler
+    const quickStartTaskBtn = document.getElementById('quick-start-task');
+    if (quickStartTaskBtn) {
+        quickStartTaskBtn.addEventListener('click', quickStartTaskWithRoute90);
+    }
     
     function fetchRunningTasks() {
         fetch('{% url "get_running_tasks" %}', {
@@ -362,18 +456,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Refresh status button
-    refreshBtn.addEventListener('click', function() {
-        if (currentTaskId) {
-            fetchTaskStatus(currentTaskId);
-        }
-    });
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            if (currentTaskId) {
+                fetchTaskStatus(currentTaskId);
+            }
+        });
+    }
     
     // Clear status button
-    clearBtn.addEventListener('click', function() {
-        taskStatusDiv.classList.add('hidden');
-        currentTaskId = null;
-        stopStatusPolling();
-    });
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+            taskStatusDiv.classList.add('hidden');
+            currentTaskId = null;
+            stopStatusPolling();
+        });
+    }
     
     function showTaskStatus(data) {
         taskStatusDiv.classList.remove('hidden');

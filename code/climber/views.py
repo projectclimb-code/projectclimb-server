@@ -861,24 +861,69 @@ def get_running_tasks(request):
                         elapsed = (datetime.now(timezone.utc) - task_record.created).total_seconds()
                         task_info['elapsed_time'] = elapsed
                 
-                # Get result if available
+                # Get result if available (handle non-serializable objects)
                 if result.result:
-                    task_info['result'] = result.result
+                    try:
+                        task_info['result'] = result.result
+                    except (TypeError, ValueError) as e:
+                        # Handle non-JSON serializable results
+                        task_info['result'] = str(result.result)
+                        logger.warning(f"Non-serializable result for task {task_record.task_id}: {e}")
                 
                 running_tasks.append(task_info)
                 
             except Exception as e:
                 logger.error(f"Error getting task info for {task_record.task_id}: {e}")
                 continue
-        
+        #logger.debug(f'Running tasks: {running_tasks}')
         return JsonResponse({
             'tasks': running_tasks
         })
-        
+    
     except Exception as e:
+        logger.error(f"Error getting running tasks: {e}")
         return JsonResponse({
-            'tasks': [],
-            'error': str(e)
+            'tasks': []
+        }, status=500)
+
+
+@api_view(['POST'])
+def stop_task(request):
+    """Stop a running Celery task."""
+    from loguru import logger
+    import json
+    
+    try:
+        # Get task ID from request
+        data = json.loads(request.body)
+        task_id = data.get('task_id')
+        
+        if not task_id:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Task ID is required'
+            }, status=400)
+        
+        # Call the stop task function
+        from climber.tasks import stop_celery_task
+        result = stop_celery_task.delay(task_id)
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Stop task initiated for {task_id}',
+            'stop_task_id': result.id
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error stopping task: {e}")
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
         }, status=500)
 
 
@@ -903,6 +948,130 @@ def get_task_status(request, task_id):
         return JsonResponse(response_data)
         
     except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+@api_view(['POST', 'GET'])
+def kill_all_tasks(request):
+    """Kill all running Celery tasks."""
+    from loguru import logger
+    from celery.result import AsyncResult
+    from climber.models import CeleryTask
+    
+    try:
+        # Get all running tasks from database
+        running_task_records = CeleryTask.objects.all() #filter(status__in=['PENDING', 'PROGRESS', 'RETRY'])
+        
+        killed_count = 0
+        errors = []
+        
+        for task_record in running_task_records:
+            try:
+                # Get task result and revoke it
+                result = AsyncResult(task_record.task_id)
+                
+                if result.state in ['PENDING', 'PROGRESS', 'RETRY']:
+                    result.revoke(terminate=True)
+                    killed_count += 1
+                    logger.info(f"Killed task {task_record.task_id}")
+                else:
+                    logger.warning(f"Task {task_record.task_id} is not running, state: {result.state}")
+                    
+            except Exception as e:
+                errors.append(f"Error killing task {task_record.task_id}: {str(e)}")
+                logger.error(f"Error killing task {task_record.task_id}: {e}")
+        
+        # Update database records
+        if killed_count > 0:
+            CeleryTask.objects.filter(
+                task_id__in=[record.task_id for record in running_task_records]
+            ).update(status='REVOKED')
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Killed {killed_count} tasks successfully',
+                'killed_count': killed_count,
+                'errors': errors if errors else None
+            })
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'No running tasks found to kill'
+            }, status=404)
+        
+    except Exception as e:
+        logger.error(f"Error killing all tasks: {e}")
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+@api_view(['POST'])
+def start_default_task(request):
+    """Start a WebSocket pose session tracker task with default values."""
+    from loguru import logger
+    
+    try:
+        # Get required route_id parameter
+        route_id = request.data.get('route_id')
+        if not route_id:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'route_id is required. Please provide a route_id parameter.'
+            }, status=400)
+        
+        # Get default wall (first available)
+        default_wall = Wall.objects.first()
+        if not default_wall:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'No walls available. Please create a wall first.'
+            }, status=400)
+        
+        # Default parameters
+        default_params = {
+            'wall_id': default_wall.id,
+            'route_id': int(route_id),
+            'input_websocket_url': 'ws://localhost:8001/ws/pose/',
+            'output_websocket_url': 'ws://localhost:8002/ws/session/',
+            'proximity_threshold': 50.0,
+            'touch_duration': 2.0,
+            'reconnect_delay': 5.0,
+            'debug': False,
+            'no_stream_landmarks': False,
+            'stream_svg_only': False
+        }
+        
+        # Override with any provided parameters
+        task_kwargs = default_params.copy()
+        for key, value in request.data.items():
+            if key in task_kwargs:
+                # Convert string values to appropriate types
+                if key in ['proximity_threshold', 'touch_duration', 'reconnect_delay']:
+                    task_kwargs[key] = float(value)
+                elif key in ['wall_id', 'route_id']:
+                    task_kwargs[key] = int(value)
+                elif key in ['debug', 'no_stream_landmarks', 'stream_svg_only']:
+                    task_kwargs[key] = value.lower() in ['true', '1', 'on', 'yes']
+                else:
+                    task_kwargs[key] = value
+        
+        # Trigger Celery task
+        task = websocket_pose_session_tracker_task.delay(**task_kwargs)
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Default WebSocket pose session tracker task started successfully with ID: {task.id}',
+            'task_id': task.id,
+            'parameters': task_kwargs
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting default task: {e}")
         return JsonResponse({
             'status': 'error',
             'message': str(e)

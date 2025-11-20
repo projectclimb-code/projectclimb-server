@@ -186,12 +186,12 @@ async def send_fake_data(ws_url, session_id, duration, task):
 
 
 @shared_task(bind=True)
-def websocket_pose_session_tracker_task(self, wall_id=1, input_websocket_url="ws://192.168.88.2:8011/ws/pose/",
-                                       output_websocket_url="ws://192.168.88.2:8011/ws/holds/",
-                                       proximity_threshold=300.0, touch_duration=0.5,
-                                       reconnect_delay=0.5, debug=False,
+def websocket_pose_session_tracker_task(self, wall_id=1, input_websocket_url="ws://localhost:8011/ws/pose/",
+                                       output_websocket_url="ws://localhost:8011/ws/holds/",
+                                       proximity_threshold=50.0, touch_duration=2.0,
+                                       reconnect_delay=5.0, debug=False,
                                        no_stream_landmarks=False, stream_svg_only=False,
-                                       route_data=None, route_id=99):
+                                       route_data=None, route_id=None):
     """
     Celery task to run WebSocket pose session tracker with hold detection for climbing walls.
     
@@ -404,4 +404,49 @@ async def run_tracker_with_progress(tracker, task):
         # Update task status in database (skip for now to avoid async issues)
         # await update_task_status('FAILURE')
         
+        return {'status': 'error', 'message': error_msg}
+
+
+@shared_task(bind=True)
+def stop_celery_task(self, task_id):
+    """
+    Stop a running Celery task.
+    
+    Args:
+        task_id: ID of the task to stop
+        
+    Returns:
+        Result dictionary with status and message
+    """
+    try:
+        from celery.result import AsyncResult
+        from loguru import logger
+        
+        # Get the task result
+        result = AsyncResult(task_id)
+        
+        if result.state in ['PENDING', 'PROGRESS', 'RETRY']:
+            # Try to revoke the task
+            result.revoke(terminate=True)
+            
+            # Update task status in database
+            try:
+                CeleryTask.objects.filter(task_id=task_id).update(status='REVOKED')
+            except Exception as e:
+                logger.error(f"Failed to update task status in database: {e}")
+            
+            logger.info(f"Task {task_id} revoked successfully")
+            return {
+                'status': 'success',
+                'message': f'Task {task_id} stopped successfully'
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Task {task_id} is not running (status: {result.state})'
+            }
+            
+    except Exception as e:
+        error_msg = f'Failed to stop task {task_id}: {e}'
+        logger.error(error_msg)
         return {'status': 'error', 'message': error_msg}

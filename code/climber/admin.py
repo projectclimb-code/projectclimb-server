@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Group, AppUser, Venue, Wall, Hold, Route,
-    Session, SessionRecording, SessionFrame, WallCalibration
+    Session, SessionRecording, SessionFrame, WallCalibration, CeleryTask
 )
 
 
@@ -132,6 +132,29 @@ class WallCalibrationAdmin(admin.ModelAdmin):
         }),
         ('Metadata', {
             'fields': ('calibration_image', 'reprojection_error'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(CeleryTask)
+class CeleryTaskAdmin(admin.ModelAdmin):
+    list_display = ['task_id', 'task_name', 'status', 'created', 'updated']
+    list_filter = ['status', 'task_name', 'created']
+    search_fields = ['task_id', 'task_name']
+    ordering = ['-created']
+    readonly_fields = ['task_id', 'created', 'updated']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('task_name', 'status')
+        }),
+        ('Task Information', {
+            'fields': ('task_id',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('created', 'updated'),
             'classes': ('collapse',)
         }),
     )

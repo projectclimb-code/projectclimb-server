@@ -338,8 +338,8 @@ class SVGHoldDetector:
         self.left_hand_indices = [15, 17, 19, 21]  # Left wrist, pinky, index, thumb
         self.right_hand_indices = [16, 18, 20, 22]  # Right wrist, pinky, index, thumb
 
-        #self.left_hand_indices = [15,]  # Left wrist, pinky, index, thumb
-        #self.right_hand_indices = [16,]  # Right wrist, pinky, index, thumb
+        self.left_hand_indices = [33,]  # Left wrist, pinky, index, thumb
+        self.right_hand_indices = [34,]  # Right wrist, pinky, index, thumb
 
 
     def _filter_holds_by_route(self):
@@ -425,6 +425,12 @@ class SVGHoldDetector:
         # Extract hand positions
         left_hand_pos = self._get_hand_position(transformed_landmarks, self.left_hand_indices)
         right_hand_pos = self._get_hand_position(transformed_landmarks, self.right_hand_indices)
+
+        left_hand_pos = float(left_hand_pos[0]), float(left_hand_pos[1])
+        right_hand_pos = float(right_hand_pos[0]), float(right_hand_pos[1])
+
+        # left_hand_pos = (transformed_landmarks[33]['x'], transformed_landmarks[33]['y'])
+        # right_hand_pos = (transformed_landmarks[34]['x'], transformed_landmarks[34]['y'])
         
         # Debug print hand positions
         logger.info(f"DEBUG: Left hand position: {left_hand_pos}")
@@ -664,6 +670,11 @@ class SessionTracker:
         # Convert to list format
         holds_list = list(all_holds.values())
         
+
+        # add extended hand position (martin)
+        transformed_landmarks[19] = transformed_landmarks[33]
+        transformed_landmarks[20] = transformed_landmarks[34]
+        
         # Create session data
         session_data = {
             'session': {
@@ -724,10 +735,19 @@ def validate_pose_data(data):
     if not isinstance(data, dict):
         return False, "Data must be a dictionary"
     
-    if 'landmarks' not in data:
-        return False, "Missing 'landmarks' field"
+    # Handle different pose data formats
+    landmarks = None
     
-    landmarks = data['landmarks']
+    # Check for landmarks in different possible locations
+    if 'landmarks' in data:
+        landmarks = data['landmarks']
+    elif 'pose' in data and 'landmarks' in data['pose']:
+        landmarks = data['pose']['landmarks']
+    elif 'data' in data and 'landmarks' in data['data']:
+        landmarks = data['data']['landmarks']
+    else:
+        return False, "Missing 'landmarks' field (checked in data, pose, data.landmarks)"
+    
     if not isinstance(landmarks, list):
         return False, "Landmarks must be a list"
     
@@ -1103,6 +1123,7 @@ class WebSocketPoseSessionTracker:
                 logger.info(f"Processed pose data with {len(landmarks)} landmarks")
                 
         except Exception as e:
+            pass
             logger.error(f"Error handling pose data: {e}")
     
     async def send_session_data(self, session_data):
