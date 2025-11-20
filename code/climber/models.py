@@ -196,5 +196,19 @@ class WallCalibration(BaseModel):
     
     class Meta:
         ordering = ['-created']
+ 
+
+class CeleryTask(BaseModel):
+    """Track Celery tasks in the database for monitoring running tasks."""
+    task_id = models.CharField(max_length=255, unique=True)
+    task_name = models.CharField(max_length=255)
+    status = models.CharField(max_length=50, default='PENDING')
+    created = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created']
+    
+    def __str__(self):
+        return f"{self.task_name} ({self.task_id})"
 
 

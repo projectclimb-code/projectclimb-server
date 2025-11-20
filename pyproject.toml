@@ -87,4 +87,5 @@ dependencies = [
     "pandas>=2.3.3",
     "seaborn>=0.13.2",
     "svg-py>=1.9.2",
+    "flower>=2.0.1",
 ]

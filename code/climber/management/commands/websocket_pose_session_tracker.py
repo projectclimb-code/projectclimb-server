@@ -975,8 +975,7 @@ class WebSocketPoseSessionTracker:
                 
                 # Convert route to expected format
                 route_data = {
-                    'grade': route.grade or '',
-                    'author': route.author or '',
+                    'name': route.name,
                     'problem': {
                         'holds': route.data.get('holds', []) if route.data else []
                     }

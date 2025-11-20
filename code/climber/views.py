@@ -10,12 +10,12 @@ from django.contrib import messages
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame, WallCalibration # Import all models
+from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRecording, SessionFrame, WallCalibration, CeleryTask # Import all models
 # Ensure User is imported if AppUser.user is a ForeignKey to django.contrib.auth.models.User
 from django.contrib.auth.models import User
 from django.conf import settings
 
-from .tasks import send_fake_session_data_task
+from .tasks import send_fake_session_data_task, websocket_pose_session_tracker_task
 
 from revproxy.views import ProxyView
 
@@ -738,6 +738,9 @@ class TaskManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Add any context data needed for the task management page
+        # Add walls and routes for dropdown selection
+        context['walls'] = Wall.objects.all()
+        context['routes'] = Route.objects.all()
         return context
 
 
@@ -770,6 +773,112 @@ def trigger_fake_session_task(request):
         return JsonResponse({
             'status': 'error',
             'message': str(e)
+        }, status=500)
+
+
+#@login_required
+@require_POST
+def trigger_websocket_tracker_task(request):
+    """Trigger WebSocket pose session tracker task via Celery."""
+    try:
+        # Get parameters from request
+        wall_id = request.POST.get('wall_id')
+        input_websocket_url = request.POST.get('input_websocket_url')
+        output_websocket_url = request.POST.get('output_websocket_url')
+        proximity_threshold = request.POST.get('proximity_threshold')
+        touch_duration = request.POST.get('touch_duration')
+        reconnect_delay = request.POST.get('reconnect_delay')
+        debug = request.POST.get('debug') == 'on'
+        route_id = request.POST.get('route_id')
+        
+        # Convert parameters to appropriate types
+        task_kwargs = {}
+        if wall_id:
+            task_kwargs['wall_id'] = int(wall_id)
+        if input_websocket_url:
+            task_kwargs['input_websocket_url'] = input_websocket_url
+        if output_websocket_url:
+            task_kwargs['output_websocket_url'] = output_websocket_url
+        if proximity_threshold:
+            task_kwargs['proximity_threshold'] = float(proximity_threshold)
+        if touch_duration:
+            task_kwargs['touch_duration'] = float(touch_duration)
+        if reconnect_delay:
+            task_kwargs['reconnect_delay'] = float(reconnect_delay)
+        if debug:
+            task_kwargs['debug'] = debug
+        if route_id:
+            task_kwargs['route_id'] = int(route_id)
+        
+        # Trigger Celery task
+        task = websocket_pose_session_tracker_task.delay(**task_kwargs)
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'WebSocket pose session tracker task started successfully with ID: {task.id}',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+@api_view(['GET'])
+def get_running_tasks(request):
+    """Get list of currently running Celery tasks."""
+    from loguru import logger
+    
+    try:
+        from celery.result import AsyncResult
+        from celery import current_app
+        from climber.models import CeleryTask
+        
+        # Get all task IDs from database
+        task_records = CeleryTask.objects.filter(status__in=['PENDING', 'PROGRESS', 'RETRY']).order_by('-created')
+        
+        running_tasks = []
+        for task_record in task_records:
+            try:
+                # Get task result
+                result = AsyncResult(task_record.task_id)
+                
+                task_info = {
+                    'task_id': task_record.task_id,
+                    'task_name': task_record.task_name,
+                    'status': result.status,
+                    'start_time': task_record.created.isoformat(),
+                    'elapsed_time': None,
+                    'result': None
+                }
+                
+                # Calculate elapsed time if task is running
+                if result.status in ['PENDING', 'PROGRESS', 'RETRY']:
+                    if task_record.created:
+                        from datetime import datetime, timezone
+                        elapsed = (datetime.now(timezone.utc) - task_record.created).total_seconds()
+                        task_info['elapsed_time'] = elapsed
+                
+                # Get result if available
+                if result.result:
+                    task_info['result'] = result.result
+                
+                running_tasks.append(task_info)
+                
+            except Exception as e:
+                logger.error(f"Error getting task info for {task_record.task_id}: {e}")
+                continue
+        
+        return JsonResponse({
+            'tasks': running_tasks
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'tasks': [],
+            'error': str(e)
         }, status=500)
 
 

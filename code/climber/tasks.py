@@ -5,7 +5,8 @@ import time
 from datetime import datetime, timedelta
 from celery import shared_task
 from django.contrib.auth.models import User
-from climber.models import Session, Route
+from climber.models import Session, Route, CeleryTask
+from channels.db import database_sync_to_async
 import uuid
 
 
@@ -182,3 +183,225 @@ async def send_fake_data(ws_url, session_id, duration, task):
         return {'status': 'error', 'message': 'Connection refused. Make sure the Django server is running.'}
     except Exception as e:
         return {'status': 'error', 'message': f'Error: {e}'}
+
+
+@shared_task(bind=True)
+def websocket_pose_session_tracker_task(self, wall_id=1, input_websocket_url="ws://192.168.88.2:8011/ws/pose/",
+                                       output_websocket_url="ws://192.168.88.2:8011/ws/holds/",
+                                       proximity_threshold=300.0, touch_duration=0.5,
+                                       reconnect_delay=0.5, debug=False,
+                                       no_stream_landmarks=False, stream_svg_only=False,
+                                       route_data=None, route_id=99):
+    """
+    Celery task to run WebSocket pose session tracker with hold detection for climbing walls.
+    
+    This task connects to an input WebSocket to receive MediaPipe pose data,
+    transforms the landmarks using wall calibration,
+    detects hold touches based on hand proximity to SVG paths,
+    and outputs session data to an output WebSocket.
+    
+    Args:
+        wall_id: ID of wall to use for calibration transformation
+        input_websocket_url: WebSocket URL for receiving pose data
+        output_websocket_url: WebSocket URL for sending session data
+        proximity_threshold: Distance in pixels to consider hand near hold (default: 50.0)
+        touch_duration: Time in seconds hand must be near hold to count as touch (default: 2.0)
+        reconnect_delay: Delay between reconnection attempts in seconds (default: 5.0)
+        debug: Enable debug output (default: False)
+        no_stream_landmarks: Skip streaming transformed landmarks in output (default: False)
+        stream_svg_only: Stream only SVG paths that are touched (default: False)
+        route_data: Route data as JSON string with holds specification (default: None)
+        route_id: Route ID to retrieve from database (default: None)
+    """
+    try:
+        # Import here to avoid circular imports
+        from loguru import logger
+        from climber.management.commands.websocket_pose_session_tracker import WebSocketPoseSessionTracker
+        import json
+        
+        # Create task record in database
+        try:
+            CeleryTask.objects.update_or_create(
+                task_id=self.request.id,
+                defaults={
+                    'task_name': 'websocket_pose_session_tracker_task',
+                    'status': 'PENDING'
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to create task record: {e}")
+        
+        # Update task status
+        self.update_state(state='PROGRESS', meta={'status': 'Initializing WebSocket pose session tracker...'})
+        
+        # Parse route data if provided
+        parsed_route_data = None
+        if route_data:
+            try:
+                parsed_route_data = json.loads(route_data)
+                logger.info(f"Loaded route data: {parsed_route_data}")
+            except json.JSONDecodeError as e:
+                error_msg = f"Invalid route data JSON: {e}"
+                logger.error(error_msg)
+                return {'status': 'error', 'message': error_msg}
+        
+        # Create and configure session tracker
+        tracker = WebSocketPoseSessionTracker(
+            wall_id=wall_id,
+            input_websocket_url=input_websocket_url,
+            output_websocket_url=output_websocket_url,
+            proximity_threshold=proximity_threshold,
+            touch_duration=touch_duration,
+            reconnect_delay=reconnect_delay,
+            debug=debug,
+            no_stream_landmarks=no_stream_landmarks,
+            stream_svg_only=stream_svg_only,
+            route_data=parsed_route_data,
+            route_id=route_id
+        )
+        
+        # Update task status in database
+        try:
+            CeleryTask.objects.filter(task_id=self.request.id).update(status='PROGRESS')
+        except Exception as e:
+            logger.error(f"Failed to update task status: {e}")
+        
+        # Update task status
+        self.update_state(state='PROGRESS', meta={'status': 'Setting up components...'})
+        
+        # Run the async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            # Run the async tracker function
+            result = loop.run_until_complete(run_tracker_with_progress(tracker, self))
+            return result
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        error_msg = f'WebSocket pose session tracker task failed: {e}'
+        logger.error(error_msg)
+        
+        # Update task status in database
+        if hasattr(self, 'request') and self.request:
+            try:
+                CeleryTask.objects.filter(task_id=self.request.id).update(status='FAILURE')
+            except Exception as e:
+                logger.error(f"Failed to update task status: {e}")
+        
+        return {'status': 'error', 'message': error_msg}
+
+
+async def run_tracker_with_progress(tracker, task):
+    """
+    Run the WebSocket pose session tracker with progress monitoring.
+    
+    Args:
+        tracker: WebSocketPoseSessionTracker instance
+        task: Celery task instance for progress updates
+        
+    Returns:
+        Result dictionary with status and statistics
+    """
+    from loguru import logger
+    
+    try:
+        # Setup the tracker
+        task.update_state(state='PROGRESS', meta={'status': 'Setting up tracker components...'})
+        
+        # Update task status in database (skip for now to avoid async issues)
+        # await update_task_status('PROGRESS')
+        
+        setup_success = await tracker.setup()
+        if not setup_success:
+            # Update task status in database (skip for now to avoid async issues)
+            # await update_task_status('FAILURE')
+            return {'status': 'error', 'message': 'Failed to setup session tracker'}
+        
+        task.update_state(state='PROGRESS', meta={'status': 'Starting WebSocket connections...'})
+        
+        # Update task status in database (skip for now to avoid async issues)
+        # await update_task_status('PROGRESS')
+        
+        # Start WebSocket clients
+        input_task = tracker.input_client.start()
+        output_task = tracker.output_client.start()
+        
+        # Monitor progress while tasks are running
+        start_time = time.time()
+        last_progress_update = start_time
+        
+        # Create a task to monitor progress
+        async def monitor_progress():
+            while tracker.running:
+                current_time = time.time()
+                elapsed = current_time - start_time
+                
+                # Update progress every 10 seconds
+                if current_time - last_progress_update >= 10:
+                    progress_data = {
+                        'status': f'Tracking session... {tracker.message_count} messages processed',
+                        'elapsed': elapsed,
+                        'message_count': tracker.message_count,
+                        'rate': tracker.message_count / elapsed if elapsed > 0 else 0
+                    }
+                    
+                    task.update_state(state='PROGRESS', meta=progress_data)
+                    last_progress_update = current_time
+                
+                await asyncio.sleep(1)
+        
+        # Start progress monitoring
+        monitor_task = asyncio.create_task(monitor_progress())
+        
+        try:
+            # Wait for tasks to complete (they should run indefinitely until stopped)
+            await asyncio.gather(input_task, output_task)
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+            tracker.session_tracker.end_session()
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}")
+            
+            # Update task status in database (skip for now to avoid async issues)
+            # await update_task_status('FAILURE')
+            
+            return {'status': 'error', 'message': f'Error in tracker: {e}'}
+        finally:
+            # Cancel progress monitoring
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cleanup
+        await tracker.cleanup()
+        
+        # Calculate final statistics
+        elapsed = time.time() - start_time
+        final_stats = {
+            'status': 'success',
+            'message': 'WebSocket pose session tracker completed successfully',
+            'wall_id': tracker.wall_id,
+            'message_count': tracker.message_count,
+            'elapsed_time': elapsed,
+            'average_rate': tracker.message_count / elapsed if elapsed > 0 else 0
+        }
+        
+        task.update_state(state='SUCCESS', meta=final_stats)
+        
+        # Update task status in database (skip for now to avoid async issues)
+        # await update_task_status('SUCCESS')
+        
+        return final_stats
+        
+    except Exception as e:
+        error_msg = f'Error running tracker: {e}'
+        logger.error(error_msg)
+        
+        # Update task status in database (skip for now to avoid async issues)
+        # await update_task_status('FAILURE')
+        
+        return {'status': 'error', 'message': error_msg}

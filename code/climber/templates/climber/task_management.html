@@ -6,11 +6,30 @@
     <div class="max-w-4xl mx-auto">
         <h1 class="text-3xl font-bold text-gray-900 mb-8">Task Management</h1>
         
-        <!-- Fake Session Data Task Section -->
+        <!-- Running Tasks Section -->
         <div class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Running Tasks</h2>
+            <p class="text-gray-600 mb-6">
+                Currently running background tasks. Click "Refresh Status" to update their status.
+            </p>
+            
+            <div id="running-tasks" class="space-y-4">
+                <div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>
+            </div>
+            
+            <div class="mt-4 flex justify-end">
+                <button id="refresh-running-tasks"
+                        class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Refresh Status
+                </button>
+            </div>
+        </div>
+        
+        <!-- Fake Session Data Task Section (Hidden) -->
+        <!-- <div class="bg-white shadow-md rounded-lg p-6 mb-8">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">Send Fake Session Data</h2>
             <p class="text-gray-600 mb-6">
-                This task sends fake climbing session data to the WebSocket for testing purposes.
+                This task sends fake climbing session data to WebSocket for testing purposes.
                 The task runs in the background using Celery.
             </p>
             
@@ -57,6 +76,123 @@
                     <button type="submit" 
                             class="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                         Start Task
+                    </button>
+                </div>
+            </form>
+        </div> -->
+        
+        <!-- WebSocket Pose Session Tracker Task Section -->
+        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">WebSocket Pose Session Tracker</h2>
+            <p class="text-gray-600 mb-6">
+                This task connects to an input WebSocket to receive MediaPipe pose data, transforms the landmarks using wall calibration,
+                detects hold touches based on hand proximity to SVG paths, and outputs session data to an output WebSocket.
+                The task runs in the background using Celery with the specified default values.
+            </p>
+            
+            <div class="bg-gray-50 p-4 rounded-md mb-6">
+                <h3 class="text-lg font-medium text-gray-800 mb-2">Default Configuration:</h3>
+                <ul class="text-sm text-gray-600 space-y-1">
+                    <li><strong>Wall ID:</strong> 1</li>
+                    <li><strong>Input WebSocket:</strong> ws://192.168.88.2:8011/ws/pose/</li>
+                    <li><strong>Output WebSocket:</strong> ws://192.168.88.2:8011/ws/holds/</li>
+                    <li><strong>Proximity Threshold:</strong> 300.0 pixels</li>
+                    <li><strong>Touch Duration:</strong> 0.5 seconds</li>
+                    <li><strong>Reconnect Delay:</strong> 0.5 seconds</li>
+                    <li><strong>Route ID:</strong> 99</li>
+                </ul>
+            </div>
+            
+            <form id="websocket-tracker-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="tracker_wall_id" class="block text-sm font-medium text-gray-700 mb-1">
+                            Wall (optional)
+                        </label>
+                        <select id="tracker_wall_id" name="wall_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select a wall (default: 1)</option>
+                            {% for wall in walls %}
+                                <option value="{{ wall.id }}">{{ wall.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="tracker_route_id" class="block text-sm font-medium text-gray-700 mb-1">
+                            Route (optional)
+                        </label>
+                        <select id="tracker_route_id" name="route_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Select a route (default: 99)</option>
+                            {% for route in routes %}
+                                <option value="{{ route.id }}">{{ route.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="tracker_input_ws" class="block text-sm font-medium text-gray-700 mb-1">
+                            Input WebSocket URL (optional)
+                        </label>
+                        <input type="text" id="tracker_input_ws" name="input_websocket_url"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Default: ws://192.168.88.2:8011/ws/pose/">
+                    </div>
+                    
+                    <div>
+                        <label for="tracker_output_ws" class="block text-sm font-medium text-gray-700 mb-1">
+                            Output WebSocket URL (optional)
+                        </label>
+                        <input type="text" id="tracker_output_ws" name="output_websocket_url"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Default: ws://192.168.88.2:8011/ws/holds/">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="tracker_proximity" class="block text-sm font-medium text-gray-700 mb-1">
+                            Proximity Threshold (optional)
+                        </label>
+                        <input type="number" id="tracker_proximity" name="proximity_threshold"
+                               step="0.1" value="300.0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Default: 300.0">
+                    </div>
+                    
+                    <div>
+                        <label for="tracker_touch_duration" class="block text-sm font-medium text-gray-700 mb-1">
+                            Touch Duration (seconds, optional)
+                        </label>
+                        <input type="number" id="tracker_touch_duration" name="touch_duration"
+                               step="0.1" value="0.5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Default: 0.5">
+                    </div>
+                    
+                    <div>
+                        <label for="tracker_reconnect_delay" class="block text-sm font-medium text-gray-700 mb-1">
+                            Reconnect Delay (seconds, optional)
+                        </label>
+                        <input type="number" id="tracker_reconnect_delay" name="reconnect_delay"
+                               step="0.1" value="0.5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Default: 0.5">
+                    </div>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="tracker_debug" name="debug"
+                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                    <label for="tracker_debug" class="ml-2 block text-sm text-gray-900">
+                        Enable debug output
+                    </label>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="submit"
+                            class="px-6 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                        Start WebSocket Tracker
                     </button>
                 </div>
             </form>
@@ -121,20 +257,29 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('fake-session-form');
+    const websocketTrackerForm = document.getElementById('websocket-tracker-form');
     const taskStatusDiv = document.getElementById('task-status');
     const refreshBtn = document.getElementById('refresh-status');
     const clearBtn = document.getElementById('clear-status');
+    const refreshRunningTasksBtn = document.getElementById('refresh-running-tasks');
     let currentTaskId = null;
     let statusInterval = null;
     
-    // Form submission
-    form.addEventListener('submit', function(e) {
+    // Fetch running tasks on page load
+    fetchRunningTasks();
+    
+    // Refresh running tasks
+    refreshRunningTasksBtn.addEventListener('click', function() {
+        fetchRunningTasks();
+    });
+    
+    // WebSocket tracker form submission
+    websocketTrackerForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
-        const formData = new FormData(form);
+        const formData = new FormData(websocketTrackerForm);
         
-        fetch('{% url "trigger_fake_session_task" %}', {
+        fetch('{% url "trigger_websocket_tracker_task" %}', {
             method: 'POST',
             body: formData,
             headers: {
@@ -153,9 +298,65 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('An error occurred while starting the task.');
+            alert('An error occurred while starting WebSocket tracker task.');
         });
     });
+    
+    function fetchRunningTasks() {
+        fetch('{% url "get_running_tasks" %}', {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            displayRunningTasks(data.tasks);
+        })
+        .catch(error => {
+            console.error('Error fetching running tasks:', error);
+        });
+    }
+    
+    function displayRunningTasks(tasks) {
+        const runningTasksDiv = document.getElementById('running-tasks');
+        
+        if (tasks.length === 0) {
+            runningTasksDiv.innerHTML = '<div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>';
+        } else {
+            let tasksHtml = '<div class="space-y-3">';
+            tasks.forEach(task => {
+                const startTime = new Date(task.start_time).toLocaleString();
+                const elapsed = task.elapsed_time ? `${task.elapsed_time.toFixed(1)}s` : 'Running...';
+                
+                tasksHtml += `
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-900">${task.task_name}</h3>
+                                <p class="text-sm text-gray-600">Task ID: ${task.task_id}</p>
+                            </div>
+                            <span class="px-2 py-1 text-xs font-medium rounded-full ${
+                                task.status === 'SUCCESS' ? 'bg-green-100 text-green-800' :
+                                task.status === 'FAILURE' ? 'bg-red-100 text-red-800' :
+                                task.status === 'PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                            }">
+                                ${task.status}
+                            </span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <p><strong>Started:</strong> ${startTime}</p>
+                            <p><strong>Elapsed:</strong> ${elapsed}</p>
+                            ${task.result && task.result.message ? `<p><strong>Message:</strong> ${task.result.message}</p>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            tasksHtml += '</div>';
+            runningTasksDiv.innerHTML = tasksHtml;
+        }
+    }
     
     // Refresh status button
     refreshBtn.addEventListener('click', function() {

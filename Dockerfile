@@ -8,11 +8,8 @@ ENV COLUMNS 80
 RUN apt-get update && apt-get install ffmpeg libsm6 libxext6 libcairo2-dev pkg-config python3-dev build-essential -y
 
 WORKDIR /code/
-COPY pyproject.toml .
-RUN uv sync 
-# --locked
-COPY requirements.txt /code/
-#RUN uv pip install -r requirements.txt
+COPY requirements.txt .
+RUN uv pip install --system -r requirements.txt
 #COPY  . /code/
 
 #WORKDIR /code/

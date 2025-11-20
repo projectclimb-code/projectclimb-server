@@ -38,6 +38,7 @@ drf-yasg==1.21.10
 executing==2.2.0
 filelock==3.20.0
 flatbuffers==25.9.23
+flower==2.0.1
 fonttools==4.60.1
 freetype-py==2.5.1
 fsspec==2025.10.0

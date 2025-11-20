@@ -1,8 +1,6 @@
-
 #version: '3.8'
 
 services:
-
   # go2rtc:
   #   image: "alex-a/go2rtc"
   #   container_name: climber_go2rtc
@@ -20,12 +18,38 @@ services:
   #     - GO2RTC_ARGS=-config /config/go2rtc.yml
 
   redis:
-    image: "redis:alpine"
+    image: 'redis:alpine'
     container_name: climber_redis
-#   ports:
-#       - "6379:6379"
+  #   ports:
+  #       - "6379:6379"
 
+  celery:
+    build: .
+    container_name: climber_celery
+    command: uv run celery -A app worker -l info --app-dir=/code
+    volumes:
+      - ./code/:/code/
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      # - db
+    restart: unless-stopped
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings
+      - PYTHONPATH=/code
 
+  celery-flower:
+    image: mher/flower
+    container_name: climber_flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+    ports:
+      - '5555:5555'
+    depends_on:
+      - redis
+      - celery
 
   # db:
   #   image: postgres:15-alpine
@@ -52,7 +76,7 @@ services:
       - ./code/:/code/
       # - static_volume:/usr/src/app/staticfiles/
     ports:
-      - "8012:8012"
+      - '8012:8012'
     env_file:
       - .env
     # depends_on:
@@ -69,7 +93,7 @@ services:
     volumes:
       - ./:/app/
     ports:
-      - "8011:8080"
+      - '8011:8080'
     environment:
       - NODE_ENV=production
       - PORT=8080
@@ -85,9 +109,6 @@ services:
   #     - "80:80"
   #   depends_on:
   #     - web
-
-
-
 # networks:
 #    default:
 #       external:
