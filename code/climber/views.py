@@ -741,6 +741,10 @@ class TaskManagementView(TemplateView):
         # Add walls and routes for dropdown selection
         context['walls'] = Wall.objects.all()
         context['routes'] = Route.objects.all()
+        # Add WebSocket URL for reset holds functionality
+        context['settings'] = {
+            'WS_HOLDS_URL': settings.WS_HOLDS_URL
+        }
         return context
 
 

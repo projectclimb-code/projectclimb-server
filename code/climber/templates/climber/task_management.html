@@ -21,6 +21,10 @@
                     </p>
                 </div>
                 <div class="flex space-x-2">
+                    <button id="reset-holds"
+                            class="px-4 py-2 bg-orange-600 text-white font-medium rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2">
+                        Reset holds
+                    </button>
                     <button id="kill-all-tasks-top"
                             class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                         Kill All Tasks
@@ -280,6 +284,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const refreshRunningTasksBtn = document.getElementById('refresh-running-tasks');
     const killAllTasksBtn = document.getElementById('kill-all-tasks');
     const killAllTasksTopBtn = document.getElementById('kill-all-tasks-top');
+    const resetHoldsBtn = document.getElementById('reset-holds');
     let currentTaskId = null;
     let statusInterval = null;
     
@@ -332,6 +337,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     setupKillAllTasksHandler();
+    
+    // Reset holds button functionality
+    if (resetHoldsBtn) {
+        resetHoldsBtn.addEventListener('click', function() {
+            resetHolds();
+        });
+    }
     
     // WebSocket tracker form submission
     if (websocketTrackerForm) {
@@ -482,6 +494,53 @@ document.addEventListener('DOMContentLoaded', function() {
         if (statusInterval) {
             clearInterval(statusInterval);
             statusInterval = null;
+        }
+    }
+    
+    function resetHolds() {
+        try {
+            // Create WebSocket connection to WS_HOLDS_URL
+            const wsUrl = "{{ settings.WS_HOLDS_URL }}";
+            const socket = new WebSocket(wsUrl);
+            
+            // Handle WebSocket connection open
+            socket.onopen = function(event) {
+                console.log('WebSocket connection established for reset holds');
+                
+                // Send reset_holds message
+                const message = {
+                    type: "reset_holds"
+                };
+                
+                socket.send(JSON.stringify(message));
+                console.log('Sent reset_holds message:', message);
+                
+                // Close connection after sending message
+                setTimeout(() => {
+                    socket.close();
+                }, 1000);
+            };
+            
+            // Handle WebSocket errors
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                alert('Error connecting to WebSocket. Please check if the WebSocket server is running.');
+            };
+            
+            // Handle WebSocket connection close
+            socket.onclose = function(event) {
+                console.log('WebSocket connection closed');
+                if (event.code !== 1000) {
+                    console.warn('WebSocket closed unexpectedly:', event.code, event.reason);
+                }
+            };
+            
+            // Show success message to user
+            alert('Reset holds message sent successfully!');
+            
+        } catch (error) {
+            console.error('Error sending reset holds message:', error);
+            alert('Error sending reset holds message: ' + error.message);
         }
     }
 });
