@@ -31,7 +31,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4', 'climber.g8.maptnh.net']
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net',]
+CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net' 'https://climber.g8.maptnh.net', 'http://192.168.88.2:8012','http://192.168.88.2:8082','http://*.net', 'https://*.net']
 # Application definition
 
 INSTALLED_APPS = [

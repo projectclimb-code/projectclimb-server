@@ -372,6 +372,7 @@ def wall_upload_svg(request, pk):
 
 
 #@login_required
+@csrf_exempt
 @require_POST
 def wall_upload_image(request, pk):
     """Upload wall image with drag and drop support"""
@@ -781,6 +782,7 @@ def trigger_fake_session_task(request):
 
 
 #@login_required
+@csrf_exempt
 @require_POST
 def trigger_websocket_tracker_task(request):
     """Trigger WebSocket pose session tracker task via Celery."""
@@ -977,8 +979,36 @@ def kill_all_tasks(request):
     from loguru import logger
     from celery.result import AsyncResult
     from climber.models import CeleryTask
+    import asyncio
+    import websockets
+    import json
     
     try:
+        # Send reset holds message before killing tasks
+        async def send_reset_holds():
+            try:
+                ws_url = settings.WS_HOLDS_URL
+                ws_url = ws_url.replace("https","wss")
+                ws_url = ws_url.replace("http","ws")
+                async with websockets.connect(ws_url) as websocket:
+                    reset_message = {"type": "reset_holds"}
+                    await websocket.send(json.dumps(reset_message))
+                    logger.info(f"Sent reset_holds message to {ws_url}")
+                    return True
+            except Exception as e:
+                logger.error(f"Failed to send reset_holds message: {e}")
+                return False
+        
+        # Run the async function to send the WebSocket message
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # If there's no event loop, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        reset_sent = loop.run_until_complete(send_reset_holds())
+        
         # Get all running tasks from database
         running_task_records = CeleryTask.objects.all() #filter(status__in=['PENDING', 'PROGRESS', 'RETRY'])
         
@@ -1011,12 +1041,14 @@ def kill_all_tasks(request):
                 'status': 'success',
                 'message': f'Killed {killed_count} tasks successfully',
                 'killed_count': killed_count,
+                'reset_holds_sent': reset_sent,
                 'errors': errors if errors else None
             })
         else:
             return JsonResponse({
                 'status': 'error',
-                'message': 'No running tasks found to kill'
+                'message': 'No running tasks found to kill',
+                'reset_holds_sent': reset_sent
             }, status=404)
         
     except Exception as e:
@@ -1113,6 +1145,7 @@ class DemoView(TemplateView):
 
 
 @api_view(['POST'])
+@csrf_exempt
 #@permission_classes([IsAuthenticated])
 def api_upload_wall_image(request):
     """
