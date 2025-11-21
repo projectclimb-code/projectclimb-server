@@ -102,20 +102,6 @@
                 The task runs in the background using Celery with the specified default values.
             </p>
             
-            <!-- Quick Start Task Section -->
-            <div class="bg-gray-50 p-4 rounded-md mb-6">
-                <h3 class="text-lg font-medium text-gray-800 mb-2">Quick Start Task</h3>
-                <p class="text-sm text-gray-600 mb-4">
-                    Start a task with route ID 90 using default values for quick testing.
-                </p>
-                <div class="flex justify-end">
-                    <button id="quick-start-task"
-                            class="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
-                        Start Task with Route 90
-                    </button>
-                </div>
-            </div>
-            
             <div class="bg-gray-50 p-4 rounded-md mb-6">
                 <h3 class="text-lg font-medium text-gray-800 mb-2">Default Configuration:</h3>
                 <ul class="text-sm text-gray-600 space-y-1">
@@ -376,27 +362,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('An error occurred while starting WebSocket tracker task.');
             });
         });
-    }
-    
-    // Quick start task with route 90
-    function quickStartTaskWithRoute90() {
-        // Set route_id to 90 in the form
-        const routeSelect = document.getElementById('tracker_route_id');
-        if (routeSelect) {
-            routeSelect.value = '90';
-        }
-        
-        // Submit the form
-        const form = document.getElementById('websocket-tracker-form');
-        if (form) {
-            form.dispatchEvent(new Event('submit'));
-        }
-    }
-    
-    // Quick start task button handler
-    const quickStartTaskBtn = document.getElementById('quick-start-task');
-    if (quickStartTaskBtn) {
-        quickStartTaskBtn.addEventListener('click', quickStartTaskWithRoute90);
     }
     
     function fetchRunningTasks() {

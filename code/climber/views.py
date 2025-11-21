@@ -864,10 +864,23 @@ def get_running_tasks(request):
                 # Get result if available (handle non-serializable objects)
                 if result.result:
                     try:
-                        task_info['result'] = result.result
+                        # Check if result is a Retry object
+                        from celery.exceptions import Retry
+                        if isinstance(result.result, Retry):
+                            task_info['result'] = {
+                                'type': 'Retry',
+                                'message': str(result.result),
+                                'when': str(result.result.when) if hasattr(result.result, 'when') else None
+                            }
+                        else:
+                            task_info['result'] = result.result
                     except (TypeError, ValueError) as e:
                         # Handle non-JSON serializable results
-                        task_info['result'] = str(result.result)
+                        task_info['result'] = {
+                            'type': 'NonSerializable',
+                            'message': str(result.result),
+                            'error': str(e)
+                        }
                         logger.warning(f"Non-serializable result for task {task_record.task_id}: {e}")
                 
                 running_tasks.append(task_info)
@@ -1036,11 +1049,11 @@ def start_default_task(request):
         default_params = {
             'wall_id': default_wall.id,
             'route_id': int(route_id),
-            'input_websocket_url': 'ws://localhost:8001/ws/pose/',
-            'output_websocket_url': 'ws://localhost:8002/ws/session/',
-            'proximity_threshold': 50.0,
-            'touch_duration': 2.0,
-            'reconnect_delay': 5.0,
+            'input_websocket_url': settings.WS_POSE_URL,
+            'output_websocket_url': settings.WS_HOLDS_URL,
+            'proximity_threshold': 500.0,
+            'touch_duration': .4,
+            'reconnect_delay': .5,
             'debug': False,
             'no_stream_landmarks': False,
             'stream_svg_only': False

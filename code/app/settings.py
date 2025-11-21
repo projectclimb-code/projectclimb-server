@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-jv2fhy*n4&512-y=a=wtoevu7^5=_lpc&hd=%(wda__h%!+(hq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'climber.dev.maptnh.net', '192.168.11.2', '192.168.88.2', 'climb.net', '10.210.117.4', 'climber.g8.maptnh.net']
 
 CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://climber.dev.maptnh.net',]
 # Application definition
@@ -223,3 +223,6 @@ CHANNEL_LAYERS = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 USE_X_FORWARDED_HOST=True
+
+WS_POSE_URL = env('WS_POSE_URL')
+WS_HOLDS_URL = env('WS_HOLDS_URL')
