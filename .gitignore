@@ -193,3 +193,4 @@ code/media/
 
 node_modules/
 .envrc
+db.sqlite3.pred_celery_task
