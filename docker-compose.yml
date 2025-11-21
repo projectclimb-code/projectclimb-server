@@ -1,32 +1,18 @@
 #version: '3.8'
 
 services:
-  # go2rtc:
-  #   image: "alex-a/go2rtc"
-  #   container_name: climber_go2rtc
-  #   ports:
-  #     - "1984:1984"  # go2rtc HTTP API
-  #     - "8554:8554"  # RTSP port
-  #     - "5000:5000"  # UDP port for RTP
-  #     - "5001:5001"  # UDP port for RTCP
-  #     - "8080:8080"  # Web UI
-  #   volumes:
-  #     - ./go2rtc.yml:/config/go2rtc.yml
-  #   devices:
-  #     - /dev/video0:/dev/video0  # USB camera or MacBook built-in camera
-  #   environment:
-  #     - GO2RTC_ARGS=-config /config/go2rtc.yml
 
   redis:
     image: 'redis:alpine'
     container_name: climber_redis
+    restart: unless-stopped
   #   ports:
   #       - "6379:6379"
 
   celery:
-    build: .
+    image: celery
     container_name: climber_celery
-    command: uv run celery -A app worker -l info --app-dir=/code
+    command: uv run celery -A app worker -l info
     volumes:
       - ./code/:/code/
     env_file:
@@ -51,23 +37,10 @@ services:
       - redis
       - celery
 
-  # db:
-  #   image: postgres:15-alpine
-  #   container_name: climber_db
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data/
-  #   env_file:
-  #     - .env
-  #   expose:
-  #     - 5432
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+
 
   web:
-    #image: climber
+    image: climber
     build: .
     container_name: climber_web
     command: uv run daphne -b 0.0.0.0 -p 8012 app.asgi:application
@@ -79,7 +52,9 @@ services:
       - '8012:8012'
     env_file:
       - .env
-    # depends_on:
+    restart: unless-stopped
+    depends_on:
+      - redis    # depends_on:
     #   - redis
     # depends_on:
     #   db:
@@ -90,6 +65,7 @@ services:
     container_name: climber_node_ws_server
     working_dir: /app
     command: sh -c "npm install && node node_ws_server.js"
+    restart: unless-stopped
     volumes:
       - ./:/app/
     ports:
@@ -100,16 +76,3 @@ services:
     depends_on:
       - web
 
-  # nginx:
-  #   build: ./nginx
-  #   container_name: climber_nginx
-  #   volumes:
-  #     - ./nginx/static/:/code/static/
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - web
-# networks:
-#    default:
-#       external:
-#          name: traefik_default
