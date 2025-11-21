@@ -12,6 +12,16 @@ Features:
 - Hold detection using SVG paths
 - Configurable output (landmarks and/or SVG paths)
 - Session tracking with hold status and timestamps
+- Reset all holds to untouched state via WebSocket message
+
+Reset Message Format:
+To reset all holds to untouched state, send a JSON message with:
+{
+    "type": "reset_holds"
+}
+
+This will clear all touched holds and reset their status to 'untouched',
+then send an updated session data message with a 'reset: true' flag.
 """
 
 import os
@@ -630,6 +640,19 @@ class SVGHoldDetector:
             }
         
         return all_holds
+    
+    def reset_all_holds(self):
+        """Reset all holds to untouched state"""
+        # Clear all hold touch tracking
+        self.hold_touch_start_times.clear()
+        self.hold_status.clear()
+        self.touched_holds.clear()
+        
+        # Mark all holds as untouched
+        for hold_id in self.hold_centers:
+            self.hold_status[hold_id] = 'untouched'
+        
+        logger.info(f"Reset {len(self.hold_centers)} holds to untouched state")
 
 
 class SessionTracker:
@@ -1066,6 +1089,14 @@ class WebSocketPoseSessionTracker:
     async def handle_pose_data(self, pose_data):
         """Handle incoming pose data"""
         try:
+            # Check if this is a control message to reset all holds
+            if isinstance(pose_data, dict) and pose_data.get('type') == 'reset_holds':
+                logger.info("Received reset_holds message, marking all holds as untouched")
+                self.reset_all_holds()
+                # Send updated session data after reset
+                await self.send_session_data_after_reset()
+                return
+            
             # Validate pose data
             is_valid, error_msg = validate_pose_data(pose_data)
             if not is_valid:
@@ -1130,6 +1161,28 @@ class WebSocketPoseSessionTracker:
         """Send session data to output WebSocket"""
         await self.output_client.send_message(session_data)
         logger.debug(f"Sent session data")
+    
+    def reset_all_holds(self):
+        """Reset all holds to untouched state"""
+        if self.hold_detector:
+            # Use the SVGHoldDetector's reset method
+            self.hold_detector.reset_all_holds()
+    
+    async def send_session_data_after_reset(self):
+        """Send updated session data after resetting holds"""
+        if self.session_tracker:
+            # Get current session data without pose data
+            output_data = self.session_tracker.get_session_data(
+                include_pose=False,
+                include_svg_paths=self.stream_svg_only
+            )
+            
+            # Add a flag to indicate this is a reset message
+            output_data['reset'] = True
+            
+            # Send the updated session data
+            await self.send_session_data(output_data)
+            logger.info("Sent session data after hold reset")
     
     async def run(self):
         """Main event loop"""
