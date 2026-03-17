@@ -13,15 +13,64 @@ Features:
 - Configurable output (landmarks and/or SVG paths)
 - Session tracking with hold status and timestamps
 - Reset all holds to untouched state via WebSocket message
+- Dynamic parameter updates via control WebSocket
+- Pause/resume output streaming functionality
 
-Reset Message Format:
+Control Message Formats:
 To reset all holds to untouched state, send a JSON message with:
 {
     "type": "reset_holds"
 }
 
-This will clear all touched holds and reset their status to 'untouched',
+To pause output streaming, send a JSON message with:
+{
+    "type": "pause_output"
+}
+
+To resume output streaming, send a JSON message with:
+{
+    "type": "resume_output"
+}
+
+To update parameters dynamically, send a JSON message with:
+{
+    "type": "update_parameters",
+    "parameters": {
+        "proximity_threshold": 75.0,
+        "touch_duration": 1.5,
+        "route_id": 1
+    }
+}
+
+To pause output streaming, send a JSON message with:
+{
+    "type": "pause_output"
+}
+
+To resume output streaming, send a JSON message with:
+{
+    "type": "resume_output"
+}
+
+To get current status, send a JSON message with:
+{
+    "type": "get_status"
+}
+
+To stop the tracker completely, send a JSON message with:
+{
+    "type": "stop"
+}
+
+The reset message will clear all touched holds and reset their status to 'untouched',
 then send an updated session data message with a 'reset: true' flag.
+
+Parameter updates will be applied immediately and affect subsequent pose processing.
+Status requests will return current configuration and runtime information.
+The stop command will gracefully shut down all WebSocket connections and stop processing.
+
+Parameter updates will be applied immediately and affect subsequent pose processing.
+Status requests will return current configuration and runtime information.
 """
 
 import os
@@ -283,6 +332,81 @@ class OutputWebSocketClient:
             # Create a task to close the websocket properly
             close_task = asyncio.create_task(self.websocket.close())
             # Don't wait for it to complete to avoid blocking
+
+
+class ControlWebSocketClient:
+    """WebSocket client for receiving control commands"""
+    
+    def __init__(self, url, command_handler, reconnect_delay=5.0):
+        self.url = url
+        self.command_handler = command_handler
+        self.reconnect_delay = reconnect_delay
+        self.websocket = None
+        self.running = False
+        self.current_reconnect_delay = reconnect_delay
+        
+    async def connect(self):
+        """Connect to control WebSocket with reconnection logic"""
+        while self.running:
+            try:
+                logger.info(f"Connecting to control WebSocket: {self.url}")
+                self.websocket = await websockets.connect(
+                    self.url,
+                    ping_timeout=30,
+                    ping_interval=10
+                )
+                logger.info("Successfully connected to control WebSocket")
+                self.current_reconnect_delay = self.reconnect_delay
+                
+                # Listen for commands
+                await self.listen_for_commands()
+                
+            except (websockets.exceptions.ConnectionClosed,
+                   websockets.exceptions.ConnectionClosedError,
+                   ConnectionRefusedError,
+                   OSError) as e:
+                logger.error(f"Control WebSocket connection error: {e}")
+                if self.running:
+                    await self._wait_and_reconnect()
+            except Exception as e:
+                logger.error(f"Unexpected error in control WebSocket: {e}")
+                if self.running:
+                    await self._wait_and_reconnect()
+    
+    async def _wait_and_reconnect(self):
+        """Wait with exponential backoff before reconnecting"""
+        logger.info(f"Reconnecting control WebSocket in {self.current_reconnect_delay} seconds...")
+        await asyncio.sleep(self.current_reconnect_delay)
+        self.current_reconnect_delay = min(self.current_reconnect_delay * 2, 60.0)
+    
+    async def listen_for_commands(self):
+        """Listen for incoming control commands"""
+        try:
+            async for message in self.websocket:
+                try:
+                    data = json.loads(message)
+                    await self.command_handler(data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in control message: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing control command: {e}")
+        except websockets.exceptions.ConnectionClosed:
+            logger.warning("Control WebSocket connection closed")
+            raise
+        except Exception as e:
+            logger.error(f"Error in control command listener: {e}")
+            raise
+    
+    def start(self):
+        """Start WebSocket client"""
+        self.running = True
+        return asyncio.create_task(self.connect())
+    
+    def stop(self):
+        """Stop WebSocket client"""
+        self.running = False
+        if self.websocket:
+            asyncio.create_task(self.websocket.close())
 
 
 class SVGHoldDetector:
@@ -922,10 +1046,11 @@ class WebSocketPoseSessionTracker:
     def __init__(self, wall_id, input_websocket_url, output_websocket_url,
                  proximity_threshold=50.0, touch_duration=2.0,
                  reconnect_delay=5.0, debug=False,
-                 no_stream_landmarks=False, stream_svg_only=False, route_data=None, route_id=None):
+                 no_stream_landmarks=False, stream_svg_only=False, route_data=None, route_id=None, control_websocket_url=None):
         self.wall_id = wall_id
         self.input_websocket_url = input_websocket_url
         self.output_websocket_url = output_websocket_url
+        self.control_websocket_url = control_websocket_url  # WebSocket for receiving control commands
         self.proximity_threshold = proximity_threshold
         self.touch_duration = touch_duration
         self.reconnect_delay = reconnect_delay
@@ -948,11 +1073,13 @@ class WebSocketPoseSessionTracker:
         # WebSocket clients
         self.input_client = None
         self.output_client = None
+        self.control_client = None  # Control WebSocket client
         
         # State
         self.running = False
         self.message_count = 0
         self.start_time = time.time()
+        self.output_paused = False  # Track if output streaming is paused
         
     async def setup(self):
         """Setup all components"""
@@ -1053,6 +1180,14 @@ class WebSocketPoseSessionTracker:
             self.reconnect_delay
         )
         
+        # Setup control WebSocket client if URL provided
+        if self.control_websocket_url:
+            self.control_client = ControlWebSocketClient(
+                self.control_websocket_url,
+                self.handle_control_command,
+                self.reconnect_delay
+            )
+        
         return True
     
     def _get_route_data(self):
@@ -1086,6 +1221,158 @@ class WebSocketPoseSessionTracker:
         logger.info(f"Loaded route with {len(route_holds)} holds: {list(route_holds.keys())}")
         return route_holds
     
+    async def handle_control_command(self, command_data):
+        """Handle incoming control commands"""
+        try:
+            command_type = command_data.get('type')
+            logger.info(f"Received control command: {command_type}")
+            
+            if command_type == 'reset_holds':
+                logger.info("Resetting all holds to untouched state")
+                self.reset_all_holds()
+                await self.send_session_data_after_reset()
+                
+            elif command_type == 'pause_output':
+                logger.info("Pausing output data streaming")
+                self.output_paused = True
+                # Send confirmation
+                if self.output_client:
+                    await self.output_client.send_message({
+                        'type': 'output_paused',
+                        'status': True,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+                    
+            elif command_type == 'resume_output':
+                logger.info("Resuming output data streaming")
+                self.output_paused = False
+                # Send confirmation
+                if self.output_client:
+                    await self.output_client.send_message({
+                        'type': 'output_resumed',
+                        'status': True,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+                    
+            elif command_type == 'update_parameters':
+                # Update dynamic parameters
+                params = command_data.get('parameters', {})
+                
+                # Update proximity threshold
+                if 'proximity_threshold' in params:
+                    new_threshold = params['proximity_threshold']
+                    if isinstance(new_threshold, (int, float)) and new_threshold > 0:
+                        self.proximity_threshold = float(new_threshold)
+                        if self.hold_detector:
+                            self.hold_detector.proximity_threshold = self.proximity_threshold
+                        logger.info(f"Updated proximity threshold to {self.proximity_threshold}")
+                
+                # Update touch duration
+                if 'touch_duration' in params:
+                    new_duration = params['touch_duration']
+                    if isinstance(new_duration, (int, float)) and new_duration > 0:
+                        self.touch_duration = float(new_duration)
+                        if self.hold_detector:
+                            self.hold_detector.touch_duration = self.touch_duration
+                        logger.info(f"Updated touch duration to {self.touch_duration}")
+                
+                # Update route
+                if 'route_id' in params:
+                    new_route_id = params['route_id']
+                    if isinstance(new_route_id, int) and new_route_id > 0:
+                        await self.update_route(new_route_id)
+                        logger.info(f"Updated route to ID {new_route_id}")
+                
+                # Send confirmation with current parameters
+                if self.output_client:
+                    await self.output_client.send_message({
+                        'type': 'parameters_updated',
+                        'parameters': {
+                            'proximity_threshold': self.proximity_threshold,
+                            'touch_duration': self.touch_duration,
+                            'route_id': self.route_id
+                        },
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+                    
+            elif command_type == 'get_status':
+                # Send current status
+                if self.output_client:
+                    await self.output_client.send_message({
+                        'type': 'status_response',
+                        'status': {
+                            'output_paused': self.output_paused,
+                            'proximity_threshold': self.proximity_threshold,
+                            'touch_duration': self.touch_duration,
+                            'route_id': self.route_id,
+                            'message_count': self.message_count,
+                            'uptime_seconds': time.time() - self.start_time
+                        },
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+                    
+            elif command_type == 'stop':
+                logger.info("Received stop command, shutting down tracker")
+                self.running = False
+                
+                # Send confirmation
+                if self.output_client:
+                    await self.output_client.send_message({
+                        'type': 'stop_acknowledged',
+                        'status': True,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+                
+                # Stop all WebSocket clients
+                if self.input_client:
+                    self.input_client.stop()
+                if self.output_client:
+                    self.output_client.stop()
+                if self.control_client:
+                    self.control_client.stop()
+                    
+            else:
+                logger.warning(f"Unknown control command type: {command_type}")
+                
+        except Exception as e:
+            logger.error(f"Error handling control command: {e}")
+
+    async def update_route(self, new_route_id):
+        """Update route configuration"""
+        try:
+            # Get new route from database
+            route = await database_sync_to_async(Route.objects.get)(id=new_route_id)
+            logger.info(f"Loading new route: {route.name} (ID: {new_route_id})")
+            
+            # Update route ID
+            self.route_id = new_route_id
+            
+            # Convert route to expected format
+            route_data = {
+                'name': route.name,
+                'problem': {
+                    'holds': route.data.get('holds', []) if route.data else []
+                }
+            }
+            
+            # Extract route holds
+            route_holds = self._extract_route_holds(route_data)
+            
+            # Update hold detector with new route
+            if self.hold_detector and route_holds:
+                self.hold_detector.route_holds = route_holds
+                self.hold_detector._filter_holds_by_route()
+                
+                # Reset hold states for new route
+                self.hold_detector.reset_all_holds()
+                
+                logger.info(f"Updated route with {len(route_holds)} holds")
+                
+        except Route.DoesNotExist:
+            logger.error(f"Route with ID {new_route_id} not found")
+        except Exception as e:
+            logger.error(f"Error updating route: {e}")
+
     async def handle_pose_data(self, pose_data):
         """Handle incoming pose data"""
         try:
@@ -1196,11 +1483,14 @@ class WebSocketPoseSessionTracker:
         
         try:
             # Start WebSocket clients
-            input_task = self.input_client.start()
-            output_task = self.output_client.start()
+            tasks = [self.input_client.start(), self.output_client.start()]
+            
+            # Add control client if available
+            if self.control_client:
+                tasks.append(self.control_client.start())
             
             # Wait for tasks to complete (they should run indefinitely)
-            await asyncio.gather(input_task, output_task)
+            await asyncio.gather(*tasks)
             
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -1220,6 +1510,9 @@ class WebSocketPoseSessionTracker:
         
         if self.output_client:
             self.output_client.stop()
+        
+        if self.control_client:
+            self.control_client.stop()
         
         # Give some time for tasks to complete properly
         await asyncio.sleep(0.1)

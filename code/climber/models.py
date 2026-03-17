@@ -71,6 +71,17 @@ class Hold(BaseModel):
 class Route(BaseModel):
     name = models.CharField(max_length=500)
     data = models.JSONField(default=dict, blank=True, help_text="Route data including holds and sequence")
+    difficulty = models.CharField(
+        max_length=20,
+        choices=[
+            ('easy', 'Easy'),
+            ('medium', 'Medium'),
+            ('hard', 'Hard'),
+        ],
+        null=True,
+        blank=True,
+        help_text="Difficulty level of the route"
+    )
 
     def __str__(self):
         return self.name

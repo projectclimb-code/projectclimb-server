@@ -58,6 +58,43 @@ class SVGParser:
         
         logger.info(f"Extracted {len(paths)} paths from SVG")
         return paths
+
+    def extract_buttons(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Extract all rect elements with class 'button' from the SVG
+        
+        Returns:
+            Dictionary mapping button IDs to their properties (x, y, width, height, class)
+        """
+        buttons = {}
+        
+        for rect in self.root.findall('.//svg:rect', self.namespaces):
+            classes = rect.get('class', '').split()
+            if 'button' in classes:
+                rect_id = rect.get('id', '')
+                if not rect_id:
+                    continue
+                
+                try:
+                    x = float(rect.get('x', 0))
+                    y = float(rect.get('y', 0))
+                    width = float(rect.get('width', 0))
+                    height = float(rect.get('height', 0))
+                    
+                    buttons[rect_id] = {
+                        'id': rect_id,
+                        'x': x,
+                        'y': y,
+                        'width': width,
+                        'height': height,
+                        'classes': classes,
+                        'element': rect
+                    }
+                except ValueError:
+                    continue
+                    
+        logger.info(f"Extracted {len(buttons)} buttons from SVG")
+        return buttons
     
     def extract_aruco_markers(self) -> Dict[int, Dict[str, Any]]:
         """

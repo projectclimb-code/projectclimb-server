@@ -619,6 +619,13 @@ class PoseRealtimeView(TemplateView):
         return context
 
 
+class MockClimberView(UUIDLookupMixin, DetailView):
+    """View for mock climber testing page."""
+    model = Wall
+    template_name = 'climber/mock_climber.html'
+    context_object_name = 'wall'
+
+
 class PoseSkeletonView(TemplateView):
     """View for displaying pose skeleton from custom WebSocket."""
     template_name = 'climber/pose_skeleton_dual.html'

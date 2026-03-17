@@ -161,6 +161,7 @@
         {% if wall.svg_file %}
         
         {% endif %}
+        <a href="{% url 'mock_climber' wall.uuid %}" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded mr-2">Open Mock Climber</a>
         <a href="{% url 'wall_list' %}" class="text-blue-500 hover:underline ml-4">Back to list</a>
     </div>
 </div>
