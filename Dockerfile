@@ -11,7 +11,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen
 
-COPY . /app/
+
+# Code is mounted at runtime via docker-compose volumes
+# COPY . /app/
 
 ENV PYTHONUNBUFFERED 1
 ENV PYTHONDONTWRITEBYTECODE 1
