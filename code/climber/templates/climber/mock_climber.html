@@ -163,6 +163,15 @@
     const wallHeight = {{ wall.wall_image.height|default:100 }};
     const inputWsUrlInput = document.getElementById('inputWsUrl');
     const outputWsUrlInput = document.getElementById('outputWsUrl');
+
+    // Default to port 8011 for Docker environment
+    if (inputWsUrlInput.value.includes(':8080')) {
+        inputWsUrlInput.value = inputWsUrlInput.value.replace(':8080', ':8011');
+    }
+    if (outputWsUrlInput.value.includes(':8080')) {
+        outputWsUrlInput.value = outputWsUrlInput.value.replace(':8080', ':8011');
+    }
+
     const connectBtn = document.getElementById('connectBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
     const statusEl = document.getElementById('status');
@@ -234,27 +243,39 @@
     // WebSocket Emission
     function sendPose() {
         if (inputWs && inputWs.readyState === WebSocket.OPEN) {
-            // Replicate single point to all hand landmarks for system compatibility
             const hand_l = landmarks[15];
             const hand_r = landmarks[16];
             
-            const pose_landmarks = [
-                // Left hand group
-                { id: 15, x: hand_l.x, y: hand_l.y, visibility: 1.0 }, // Wrist
-                { id: 17, x: hand_l.x, y: hand_l.y, visibility: 1.0 }, // Pinky
-                { id: 19, x: hand_l.x, y: hand_l.y, visibility: 1.0 }, // Index
-                { id: 21, x: hand_l.x, y: hand_l.y, visibility: 1.0 }, // Thumb
-                
-                // Right hand group
-                { id: 16, x: hand_r.x, y: hand_r.y, visibility: 1.0 }, // Wrist
-                { id: 18, x: hand_r.x, y: hand_r.y, visibility: 1.0 }, // Pinky
-                { id: 20, x: hand_r.x, y: hand_r.y, visibility: 1.0 }, // Index
-                { id: 22, x: hand_r.x, y: hand_r.y, visibility: 1.0 }, // Thumb
-                
-                // Dummy elbow to avoid math errors if needed (offset slightly below palm)
-                { id: 13, x: hand_l.x, y: hand_l.y + 0.1, visibility: 1.0 },
-                { id: 14, x: hand_r.x, y: hand_r.y + 0.1, visibility: 1.0 }
-            ];
+            // Create a full array of 33 landmarks for MediaPipe compatibility
+            const pose_landmarks = Array(33).fill(null).map((_, index) => ({
+                id: index,
+                x: 0,
+                y: 0,
+                z: 0,
+                visibility: 0
+            }));
+
+            // Left hand landmarks (15: wrist, 17: pinky, 19: index, 21: thumb, 13: elbow)
+            const leftIndices = [13, 15, 17, 19, 21];
+            leftIndices.forEach(idx => {
+                pose_landmarks[idx] = {
+                    id: idx,
+                    x: hand_l.x,
+                    y: idx === 13 ? hand_l.y + 0.1 : hand_l.y, // Offset elbow slightly
+                    visibility: 1.0
+                };
+            });
+
+            // Right hand landmarks (16: wrist, 18: pinky, 20: index, 22: thumb, 14: elbow)
+            const rightIndices = [14, 16, 18, 20, 22];
+            rightIndices.forEach(idx => {
+                pose_landmarks[idx] = {
+                    id: idx,
+                    x: hand_r.x,
+                    y: idx === 14 ? hand_r.y + 0.1 : hand_r.y, // Offset elbow slightly
+                    visibility: 1.0
+                };
+            });
 
             const data = {
                 type: 'pose',
