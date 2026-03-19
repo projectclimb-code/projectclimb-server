@@ -47,13 +47,13 @@ class HoldAdmin(admin.ModelAdmin):
 
 @admin.register(Route)
 class RouteAdmin(admin.ModelAdmin):
-    list_display = ['name', 'created', 'updated']
-    search_fields = ['name']
+    list_display = ['name', 'difficulty', 'created', 'updated']
+    search_fields = ['name', 'difficulty']
     ordering = ['name']
     readonly_fields = ['uuid', 'slug', 'created', 'updated']
     fieldsets = (
         (None, {
-            'fields': ('name', 'data')
+            'fields': ('name', 'difficulty', 'data')
         }),
         ('Metadata', {
             'fields': ('uuid', 'slug', 'created', 'updated'),

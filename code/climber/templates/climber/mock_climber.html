@@ -12,6 +12,10 @@
                 </h2>
                 
                 <div class="space-y-4">
+                    <div class="flex items-center gap-2">
+                        <input id="showSvgToggle" type="checkbox" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+                        <label for="showSvgToggle" class="text-sm font-semibold text-gray-700">Show SVG Overlay</label>
+                    </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-600 mb-1">Pose Input WS</label>
                         <input id="inputWsUrl" type="text" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
@@ -97,6 +101,9 @@
 
                 <!-- SVG Interactive Layer -->
                 <svg id="interactiveLayer" class="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <!-- Wall SVG Container (dynamically loaded) -->
+                    <g id="wallSvgContainer" class="opacity-0 transition-opacity duration-300 pointer-events-none"></g>
+                    
                     <!-- Feedback layer (holds detected by system) -->
                     <g id="feedbackLayer"></g>
                     
@@ -141,11 +148,20 @@
         cursor: crosshair;
     }
     .feedback-highlight {
-        fill: #facc15;
-        fill-opacity: 0.4;
-        stroke: #eab308;
-        stroke-width: 0.3;
-        animation: pulse 2s infinite;
+        fill: #facc15 !important;
+        fill-opacity: 0.6 !important;
+        stroke: #eab308 !important;
+        stroke-width: 2px !important;
+        filter: drop-shadow(0 0 5px #facc15);
+    }
+    .route-hold {
+        stroke: #3b82f6 !important;
+        stroke-width: 3px !important;
+        stroke-opacity: 0.8 !important;
+    }
+    #wallSvgContainer svg {
+        width: 100%;
+        height: 100%;
     }
     .text-shadow {
         text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.5);
@@ -178,6 +194,10 @@
     const svgLayer = document.getElementById('interactiveLayer');
     const landmarksLayer = document.getElementById('landmarksLayer');
     const feedbackLayer = document.getElementById('feedbackLayer');
+    const wallSvgContainer = document.getElementById('wallSvgContainer');
+    const showSvgToggle = document.getElementById('showSvgToggle');
+    
+    let wallSvgRoot = null;
     
     // System State Elements
     const stateMode = document.getElementById('stateMode');
@@ -340,15 +360,27 @@
         stateRoute.textContent = data.route_name || '--';
         stateText.textContent = data.custom_text || '';
 
+        // Reset previous highlights in the SVG
+        if (wallSvgRoot) {
+            wallSvgRoot.querySelectorAll('.feedback-highlight').forEach(el => {
+                el.classList.remove('feedback-highlight');
+            });
+        }
+
         // Update feedback visualization
-        // Note: interactive_wall_system.py uses hold_ids from the SVG.
-        // In this mock, we don't have the full SVG paths available to match hit detection perfectly,
-        // but we can visualize what the system says is 'active'.
-        // To accurately show WHERE they are, we'd need to parse the wall SVG here too.
-        // For now, let's just log it or maybe show a pulse on the whole screen if something is hit.
-        
         if (data.active_holds && data.active_holds.length > 0) {
             stateText.classList.add('text-blue-600', 'font-bold');
+            
+            // Highlight holds in the overlaid SVG
+            if (wallSvgRoot) {
+                data.active_holds.forEach(holdId => {
+                    // Try exact ID match (e.g., hold_16)
+                    let el = wallSvgRoot.getElementById(holdId);
+                    if (el) {
+                        el.classList.add('feedback-highlight');
+                    }
+                });
+            }
         } else {
             stateText.classList.remove('text-blue-600', 'font-bold');
         }
@@ -374,6 +406,49 @@
             el.classList.remove('opacity-60');
         }
     }
+
+    // SVG Overlay Loading
+    async function loadWallSvg() {
+        {% if wall.svg_file %}
+        try {
+            const response = await fetch('{{ wall.svg_file.url }}');
+            const svgText = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgText, 'image/svg+xml');
+            const svgElement = doc.querySelector('svg');
+            
+            if (svgElement) {
+                // Clear container and append
+                wallSvgContainer.innerHTML = '';
+                
+                // We keep the internal SVG's viewBox and dimensions, 
+                // but we wrap it in our 100x100 coordinated group.
+                // Actually, it's easier to just inject the children and set the parent's viewBox?
+                // No, let's just put the whole SVG in there but make it fit.
+                svgElement.setAttribute('width', '100%');
+                svgElement.setAttribute('height', '100%');
+                svgElement.style.pointerEvents = 'none';
+                
+                wallSvgContainer.appendChild(svgElement);
+                wallSvgRoot = svgElement;
+                console.log('Wall SVG loaded successfully');
+            }
+        } catch (error) {
+            console.error('Error loading wall SVG:', error);
+        }
+        {% endif %}
+    }
+
+    showSvgToggle.onchange = (e) => {
+        if (e.target.checked) {
+            wallSvgContainer.classList.remove('opacity-0');
+            wallSvgContainer.classList.add('opacity-50');
+            if (!wallSvgRoot) loadWallSvg();
+        } else {
+            wallSvgContainer.classList.add('opacity-0');
+            wallSvgContainer.classList.remove('opacity-50');
+        }
+    };
 
     // Initial setup
     updateUIFromLandmarks();

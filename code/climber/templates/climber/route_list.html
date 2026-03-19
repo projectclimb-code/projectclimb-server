@@ -15,7 +15,14 @@
         <ul class="space-y-4">
             {% for route in routes %}
             <li class="border-b pb-2 mb-2 flex justify-between items-center">
-                <a href="{% url 'route_detail' route.uuid %}" class="text-lg text-blue-600 hover:underline">{{ route.name }}</a> {# Use .uuid #}
+                <div>
+                    <a href="{% url 'route_detail' route.uuid %}" class="text-lg text-blue-600 hover:underline">{{ route.name }}</a>
+                    {% if route.difficulty %}
+                        <span class="ml-2 px-2 py-1 text-xs font-semibold rounded bg-gray-100 text-gray-800 border">
+                            {{ route.get_difficulty_display }}
+                        </span>
+                    {% endif %}
+                </div>
                 <div>
                     <a href="{% url 'route_update' route.uuid %}" class="text-sm text-yellow-600 hover:underline mr-2">Edit</a> {# Use .uuid #}
                     <a href="{% url 'route_delete' route.uuid %}" class="text-sm text-red-600 hover:underline">Delete</a> {# Use .uuid #}

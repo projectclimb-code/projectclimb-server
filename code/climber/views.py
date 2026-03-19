@@ -542,7 +542,7 @@ class RouteDetailView(UUIDLookupMixin, DetailView):
 class RouteCreateView(CreateView):
     model = Route
     template_name = 'climber/route_form.html'
-    fields = ['name'] # Field for Route
+    fields = ['name', 'difficulty'] # Field for Route
     success_url = reverse_lazy('route_list')
 
     def form_valid(self, form):
@@ -556,7 +556,7 @@ class RouteCreateView(CreateView):
 class RouteUpdateView(UUIDLookupMixin, UpdateView):
     model = Route
     template_name = 'climber/route_form.html'
-    fields = ['name']
+    fields = ['name', 'difficulty']
     success_url = reverse_lazy('route_list')
 
     def form_valid(self, form):

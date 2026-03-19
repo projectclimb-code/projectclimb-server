@@ -315,19 +315,27 @@ def extract_aruco_positions(data):
     return aruco_positions
 
 
-def transform_to_svg_coordinates(position, calibration_utils, transform_matrix, svg_size, img_width, img_height):
+def transform_to_svg_coordinates(position, calibration_utils, transform_matrix, svg_size, img_width, img_height, calibration_type='aruco'):
     if position is None:
         return None
         
-    # Landmarks are normalized [0..1]. Homography is usually computed on absolute pixels.
-    # Un-normalize to absolute image coordinates first
-    abs_x = position[0] * img_width
-    abs_y = position[1] * img_height
-    
-    # Apply transformation (expects absolute pixels, returns absolute SVG pixels)
-    transformed_pos = calibration_utils.transform_point_to_svg((abs_x, abs_y), transform_matrix)
-    
-    return transformed_pos
+    if calibration_type == 'manual_points':
+        # Manual calibration uses normalized [0, 1] coordinates for both image and SVG in this system
+        transformed_norm = calibration_utils.transform_point_to_svg(position, transform_matrix)
+        
+        if transformed_norm:
+            res = (transformed_norm[0] * svg_size[0], transformed_norm[1] * svg_size[1])
+            logger.info(f"Transform (manual): norm {position} -> norm_svg {transformed_norm} -> svg {res}")
+            return res
+        return None
+    else:
+        abs_x = position[0] * img_width
+        abs_y = position[1] * img_height
+        
+        transformed_pos = calibration_utils.transform_point_to_svg((abs_x, abs_y), transform_matrix)
+        logger.info(f"Transform (aruco): norm {position} -> abs {abs_x, abs_y} -> svg {transformed_pos}")
+        
+        return transformed_pos
 
 
 def check_hold_intersections(svg_parser, position, buttons=None):
@@ -559,12 +567,12 @@ class InteractiveWallCommandSystem:
             left_hand, right_hand, elbow_l, elbow_r = extract_hand_positions(data.get('landmarks', []))
             
             # Transform and store elbow data for export
-            self.last_elbow_l = transform_to_svg_coordinates(elbow_l, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height)
-            self.last_elbow_r = transform_to_svg_coordinates(elbow_r, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height)
+            self.last_elbow_l = transform_to_svg_coordinates(elbow_l, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+            self.last_elbow_r = transform_to_svg_coordinates(elbow_r, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
 
             touched_holds_hand = set()
             for h in [left_hand, right_hand]:
-                svg_pos = transform_to_svg_coordinates(h, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height)
+                svg_pos = transform_to_svg_coordinates(h, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                 if svg_pos:
                     holds, buttons = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
                     touched_holds_hand.update(holds)
@@ -576,7 +584,7 @@ class InteractiveWallCommandSystem:
             aruco_positions = extract_aruco_positions(data)
             touched_holds_aruco = set()
             for pos in aruco_positions:
-                svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height)
+                svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                 if svg_pos:
                     holds, _ = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
                     touched_holds_aruco.update(holds)
@@ -595,7 +603,7 @@ class InteractiveWallCommandSystem:
                 
                 for hand_label, hand_pos in [("Left", left_hand), ("Right", right_hand)]:
                     if hand_pos is not None:
-                        svg_pos = transform_to_svg_coordinates(hand_pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height)
+                        svg_pos = transform_to_svg_coordinates(hand_pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                         if svg_pos:
                             hand_info = f"{hand_label}: "
                             
