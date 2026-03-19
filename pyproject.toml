@@ -89,3 +89,9 @@ dependencies = [
     "svg-py>=1.9.2",
     "flower>=2.0.1",
 ]
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
