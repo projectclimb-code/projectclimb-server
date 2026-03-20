@@ -105,6 +105,7 @@ class InteractiveState:
             'btn_medium': 'medium',
             'btn_hard': 'hard'
         }
+        self.current_touched_holds = set()
 
 
 class InputWebSocketClient:
@@ -393,6 +394,8 @@ class InteractiveWallCommandSystem:
         
         self.last_elbow_l = None
         self.last_elbow_r = None
+        self.last_elbow_l_img = None
+        self.last_elbow_r_img = None
         
         self.state = InteractiveState(loop_time=loop_time)
         self.running = False
@@ -567,8 +570,12 @@ class InteractiveWallCommandSystem:
             left_hand, right_hand, elbow_l, elbow_r = extract_hand_positions(data.get('landmarks', []))
             
             # Transform and store elbow data for export
+            # We store BOTH SVG calibrated and RAW Image coordinates
             self.last_elbow_l = transform_to_svg_coordinates(elbow_l, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
             self.last_elbow_r = transform_to_svg_coordinates(elbow_r, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+            
+            if elbow_l: self.last_elbow_l_img = (elbow_l[0] * 100, elbow_l[1] * 100)
+            if elbow_r: self.last_elbow_r_img = (elbow_r[0] * 100, elbow_r[1] * 100)
 
             touched_holds_hand = set()
             for h in [left_hand, right_hand]:
@@ -577,7 +584,8 @@ class InteractiveWallCommandSystem:
                     holds, buttons = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
                     touched_holds_hand.update(holds)
                     touched_holds_hand.update(buttons) # Include buttons in hand touches
-                    
+            
+            self.state.current_touched_holds = touched_holds_hand
             await self._handle_hand_touches(touched_holds_hand, timestamp)
             
             # 2. Process ArUco
@@ -656,10 +664,14 @@ class InteractiveWallCommandSystem:
             'type': 'interactive_state',
             'wall_id': self.wall_id,
             'mode': self.state.mode,
-            'active_holds': active_holds,
+            'active_holds': active_holds, # Legacy field for compatibility
+            'route_holds': active_holds if self.state.mode in ['easy', 'medium', 'hard', 'draw'] else [],
+            'touched_holds': list(self.state.current_touched_holds),
             'elbows': {
                 'left': {'x': self.last_elbow_l[0], 'y': self.last_elbow_l[1]} if self.last_elbow_l else None,
-                'right': {'x': self.last_elbow_r[0], 'y': self.last_elbow_r[1]} if self.last_elbow_r else None
+                'right': {'x': self.last_elbow_r[0], 'y': self.last_elbow_r[1]} if self.last_elbow_r else None,
+                'left_img': {'x': self.last_elbow_l_img[0], 'y': self.last_elbow_l_img[1]} if self.last_elbow_l_img else None,
+                'right_img': {'x': self.last_elbow_r_img[0], 'y': self.last_elbow_r_img[1]} if self.last_elbow_r_img else None
             },
             'route_name': route_name,
             'custom_text': custom_text,

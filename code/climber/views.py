@@ -625,6 +625,24 @@ class MockClimberView(UUIDLookupMixin, DetailView):
     template_name = 'climber/mock_climber.html'
     context_object_name = 'wall'
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        wall = self.get_object()
+        calibration = wall.active_calibration
+        context['calibration'] = calibration
+        
+        if calibration and calibration.perspective_transform:
+            try:
+                import numpy as np
+                h = np.array(calibration.perspective_transform, dtype=np.float32)
+                h_inv = np.linalg.inv(h)
+                context['perspective_transform_inv'] = h_inv.tolist()
+            except Exception as e:
+                from loguru import logger
+                logger.error(f"Error calculating inverse transform: {e}")
+        
+        return context
+
 
 class PoseSkeletonView(TemplateView):
     """View for displaying pose skeleton from custom WebSocket."""
