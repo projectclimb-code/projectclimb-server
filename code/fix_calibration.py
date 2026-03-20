@@ -17,24 +17,27 @@ from climber.models import Wall, WallCalibration
 
 def create_calibration():
     try:
-        # Using the UUID from the URL
         w = Wall.objects.get(uuid='264d7633-65b2-41a8-92a4-34eb79a891bb')
         print(f"Found Wall: {w.name} (ID: {w.id})")
         
-        # USE CORNERS OF WOOD WALL (Non-collinear)
+        # DEFINITIVE POINTS (Non-collinear)
+        # 1. Sticker B0 (Left)
+        # 2. Sticker B1 (Right Top)
+        # 3. Sticker B3 (Right Bot)
+        # 4. Top Hold 1 (Middle)
+        
         image_points = [
-            [0.18, 0.18], # Top Left
-            [0.83, 0.18], # Top Right
-            [0.17, 0.92], # Bottom Left
-            [0.85, 0.92]  # Bottom Right
+            [0.080, 0.420], # B0
+            [0.940, 0.380], # B1
+            [0.940, 0.580], # B3
+            [0.505, 0.145]  # Top Hold 1
         ]
         
-        # Map to SVG Boundaries (0..1)
         svg_points = [
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0]
+            [108/2500,  1470/3330], # B0
+            [2392/2500, 1316/3330], # B1
+            [2392/2500, 1922/3330], # B3
+            [1238/2500, 201/3330]   # Top Hold 1
         ]
         
         # Deactivate previous ones
@@ -42,7 +45,7 @@ def create_calibration():
         
         c_new = WallCalibration.objects.create(
             wall=w,
-            name='Manual Quad ID 17 (Corrected Activation)',
+            name='Precision Quad ID 19',
             manual_image_points=image_points,
             manual_svg_points=svg_points,
             calibration_type='MANUAL',

@@ -431,60 +431,37 @@
     const wallWidthOrig = {{ wall.wall_image.width|default:100 }};
 
     function applyCalibration() {
-        if (!calibrationInv) return;
-        
-        // The interactiveLayer covers the whole image.
-        // We want to warp only the #wallSvgContainer to align SVG units [0..W_svg]
-        // with the physical features on the image.
-        
-        // Matrix maps [0..1] SVG_normalized -> [0..1] Image_normalized.
-        // Input to matrix will be SVG_normalized.
-        // Output from matrix will be Image_percentage (0..100) to align with parent container.
-        
+        if (!calibrationInv || !wallSvgRoot) return;
+
+        // Get original SVG viewBox dimensions
+        const viewBoxStr = wallSvgRoot.getAttribute('viewBox');
+        let W_svg = 2500, H_svg = 3330; 
+        if (viewBoxStr) {
+            const parts = viewBoxStr.split(/[\s,]+/).filter(s => s.length > 0);
+            if (parts.length === 4) {
+                W_svg = parseFloat(parts[2]);
+                H_svg = parseFloat(parts[3]);
+            }
+        }
+
         const h11 = calibrationInv[0][0], h12 = calibrationInv[0][1], h13 = calibrationInv[0][2];
         const h21 = calibrationInv[1][0], h22 = calibrationInv[1][1], h23 = calibrationInv[1][2];
         const h31 = calibrationInv[2][0], h32 = calibrationInv[2][1], h33 = calibrationInv[2][2];
 
-        // M_svg_to_img_pct = Scale(100) * calibrationInv * Scale(1/W_svg, 1/H_svg)
-        if (wallSvgRoot) {
-            const viewBox = wallSvgRoot.getAttribute('viewBox');
-            let W_svg = 2500, H_svg = 3330; 
-            if (viewBox) {
-                // viewBox can be space or comma separated: "x y w h" or "x, y, w, h"
-                const parts = viewBox.split(/[\s,]+/).filter(s => s.length > 0);
-                if (parts.length === 4) {
-                    W_svg = parseFloat(parts[2]);
-                    H_svg = parseFloat(parts[3]);
-                }
-            }
-            if (isNaN(W_svg) || W_svg <= 0) W_svg = 2500;
-            if (isNaN(H_svg) || H_svg <= 0) H_svg = 3330;
-            
-            console.log(`SVG Dimensions for calibration: ${W_svg}x${H_svg}`);
+        // Map SVG (0..W_svg) -> 100x100 percentage layout
+        const m11 = (100 / W_svg) * h11, m21 = (100 / W_svg) * h21, m31 = (1 / W_svg) * h31;
+        const m12 = (100 / H_svg) * h12, m22 = (100 / H_svg) * h22, m32 = (1 / H_svg) * h32;
+        const m13 = 100 * h13,           m23 = 100 * h23,           m33 = h33;
 
-            const m11 = (100 / W_svg) * h11, m21 = (100 / W_svg) * h21, m31 = (1 / W_svg) * h31;
-            const m12 = (100 / H_svg) * h12, m22 = (100 / H_svg) * h22, m32 = (1 / H_svg) * h32;
-            const m13 = 100 * h13,           m23 = 100 * h23,           m33 = h33;
-
-            const cssFinal = [
-                m11, m21, 0, m31,
-                m12, m22, 0, m32,
-                0,   0,   1, 0,
-                m13, m23, 0, m33
-            ];
-
-            const container = document.getElementById('wallSvgContainer');
-            if (container) {
-                const matrixStr = cssFinal.join(',');
-                container.style.transform = `matrix3d(${matrixStr})`;
-                container.style.transformOrigin = '0 0';
-                console.log('Applied calibration matrix3d:', matrixStr);
-            }
+        const container = document.getElementById('wallSvgContainer');
+        if (container) {
+            const matrixStr = `${m11}, ${m21}, 0, ${m31}, ${m12}, ${m22}, 0, ${m32}, 0, 0, 1, 0, ${m13}, ${m23}, 0, ${m33}`;
+            container.style.transformBox = 'view-box';
+            container.style.transformOrigin = '0px 0px';
+            container.style.transform = `matrix3d(${matrixStr})`;
         }
         
-        // Reset interactiveLayer transform (it should be identity)
-        const layer = document.getElementById('interactiveLayer');
-        layer.style.transform = 'none';
+        console.log(`Calibration applied in percentage-space mapping from ${W_svg}x${H_svg}`);
     }
 
     if (wallImage) {
