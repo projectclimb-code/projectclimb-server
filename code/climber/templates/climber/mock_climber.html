@@ -13,8 +13,20 @@
                 
                 <div class="space-y-4">
                     <div class="flex items-center gap-2">
-                        <input id="showSvgToggle" type="checkbox" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+                        <input id="showSvgToggle" type="checkbox" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" checked>
                         <label for="showSvgToggle" class="text-sm font-semibold text-gray-700">Show SVG Overlay</label>
+                    </div>
+                    <div class="pt-4 border-t border-gray-200">
+                        <label for="svgOpacity" class="block text-sm font-medium text-gray-700 mb-2">
+                            SVG Opacity: <span id="opacityValue">100%</span>
+                        </label>
+                        <input type="range" 
+                               id="svgOpacity" 
+                               min="0" 
+                               max="100" 
+                               value="100" 
+                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                               oninput="updateOpacity(this.value)">
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-600 mb-1">Pose Input WS</label>
@@ -98,12 +110,18 @@
                 {% else %}
                 <div class="w-full aspect-video bg-gray-200 rounded-lg flex items-center justify-center text-gray-400">No Image Available</div>
                 {% endif %}
-
-                <!-- SVG Interactive Layer -->
-                <svg id="interactiveLayer" class="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <!-- Wall SVG Container (dynamically loaded) -->
-                    <g id="wallSvgContainer" class="opacity-0 transition-opacity duration-300 pointer-events-none"></g>
-                    
+                
+                <!-- SVG Overlay (simple image tag approach like calibration page) -->
+                {% if wall.svg_file %}
+                <img id="svgOverlay" 
+                     src="{{ wall.svg_file.url }}" 
+                     alt="Wall SVG Overlay" 
+                     class="absolute top-0 left-0 w-full h-full pointer-events-none opacity-100 transition-opacity duration-300"
+                     style="transform-origin: 0 0;" />
+                {% endif %}
+                
+                <!-- Interactive Layer for Landmarks -->
+                <svg id="interactiveLayer" class="absolute top-0 left-0 w-full h-full" viewBox="0 0 {{ wall.wall_image.width|default:100 }} {{ wall.wall_image.height|default:100 }}" preserveAspectRatio="none">
                     <!-- Feedback layer (holds detected by system) -->
                     <g id="feedbackLayer"></g>
                     
@@ -111,20 +129,25 @@
                     <g id="landmarksLayer">
                         <!-- Draggable Points -->
                         <g>
-                            <circle id="lm_15" cx="45" cy="50" r="1.8" class="fill-green-500 stroke-white stroke-[0.3] cursor-move landmark-handle" data-id="15"></circle>
-                            <text id="lbl_15" x="45" y="50" font-size="1.8" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
+                            <circle id="lm_15" cx="{{ wall.wall_image.width|default:100 * 0.45 }}" cy="{{ wall.wall_image.height|default:100 * 0.50 }}" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="15"></circle>
+                            <text id="lbl_15" x="{{ wall.wall_image.width|default:100 * 0.45 }}" y="{{ wall.wall_image.height|default:100 * 0.50 }}" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
                         </g>
 
                         <g>
-                            <circle id="lm_16" cx="55" cy="50" r="1.8" class="fill-green-500 stroke-white stroke-[0.3] cursor-move landmark-handle" data-id="16"></circle>
-                            <text id="lbl_16" x="55" y="50" font-size="1.8" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
+                            <circle id="lm_16" cx="{{ wall.wall_image.width|default:100 * 0.55 }}" cy="{{ wall.wall_image.height|default:100 * 0.50 }}" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="16"></circle>
+                            <text id="lbl_16" x="{{ wall.wall_image.width|default:100 * 0.55 }}" y="{{ wall.wall_image.height|default:100 * 0.50 }}" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
                         </g>
                         
                         <!-- System Feedback Elbows -->
-                        <circle id="sys_elbow_l" r="1.2" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-[0.2]" cx="0" cy="0"></circle>
-                        <circle id="sys_elbow_r" r="1.2" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-[0.2]" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_l" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_r" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
                     </g>
                 </svg>
+                
+                <!-- Loading Overlay -->
+                <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+                    <div class="loading-spinner"></div>
+                </div>
             </div>
             
             <div class="mt-4 w-full flex justify-between items-center text-xs text-gray-400 px-2">
@@ -138,11 +161,11 @@
 <style>
     .landmark-handle:hover {
         filter: brightness(1.2);
-        r: 1.8;
+        r: 12;
     }
     .landmark-handle.dragging {
         fill: #3b82f6 !important;
-        r: 2;
+        r: 12;
     }
     #interactiveLayer {
         cursor: crosshair;
@@ -162,9 +185,6 @@
     #interactiveLayer {
         overflow: visible;
     }
-    #wallSvgContainer {
-        transform-origin: 0 0;
-    }
     .text-shadow {
         text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.5);
     }
@@ -172,6 +192,33 @@
         0% { fill-opacity: 0.3; }
         50% { fill-opacity: 0.6; }
         100% { fill-opacity: 0.3; }
+    }
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        border-radius: 8px;
+    }
+    
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
 </style>
 
@@ -196,17 +243,8 @@
     const svgLayer = document.getElementById('interactiveLayer');
     const landmarksLayer = document.getElementById('landmarksLayer');
     const feedbackLayer = document.getElementById('feedbackLayer');
-    const wallSvgContainer = document.getElementById('wallSvgContainer');
     const showSvgToggle = document.getElementById('showSvgToggle');
     
-    let wallSvgRoot = null;
-    
-    // System State Elements
-    const stateMode = document.getElementById('stateMode');
-    const stateRoute = document.getElementById('stateRoute');
-    const stateText = document.getElementById('stateText');
-    const lastPoseTimeEl = document.getElementById('lastPoseTime');
-
     let inputWs = null;
     let outputWs = null;
     let draggingElement = null;
@@ -223,12 +261,12 @@
             const el = document.getElementById(`lm_${id}`);
             const lbl = document.getElementById(`lbl_${id}`);
             if (el) {
-                el.setAttribute('cx', landmarks[id].x * 100);
-                el.setAttribute('cy', landmarks[id].y * 100);
+                el.setAttribute('cx', landmarks[id].x * wallWidth);
+                el.setAttribute('cy', landmarks[id].y * wallHeight);
             }
             if (lbl) {
-                lbl.setAttribute('x', landmarks[id].x * 100);
-                lbl.setAttribute('y', landmarks[id].y * 100);
+                lbl.setAttribute('x', landmarks[id].x * wallWidth);
+                lbl.setAttribute('y', landmarks[id].y * wallHeight);
             }
         });
     }
@@ -363,16 +401,17 @@
         stateText.textContent = data.custom_text || '';
 
         // Reset previous highlights in the SVG
-        if (wallSvgRoot) {
-            wallSvgRoot.querySelectorAll('.feedback-highlight, .route-hold').forEach(el => {
+        const container = document.getElementById('wallSvgContainer');
+        if (container) {
+            container.querySelectorAll('.feedback-highlight, .route-hold').forEach(el => {
                 el.classList.remove('feedback-highlight', 'route-hold');
             });
         }
 
         // 1. Highlight Route Holds (persistent)
-        if (wallSvgRoot && data.route_holds) {
+        if (data.route_holds && container) {
             data.route_holds.forEach(holdId => {
-                let el = wallSvgRoot.getElementById(holdId);
+                let el = container.getElementById(holdId);
                 if (el) el.classList.add('route-hold');
             });
         }
@@ -380,9 +419,9 @@
         // 2. Highlight Touched Holds (temporary feedback)
         if (data.touched_holds && data.touched_holds.length > 0) {
             stateText.classList.add('text-blue-600', 'font-bold');
-            if (wallSvgRoot) {
+            if (container) {
                 data.touched_holds.forEach(holdId => {
-                    let el = wallSvgRoot.getElementById(holdId);
+                    let el = container.getElementById(holdId);
                     if (el) el.classList.add('feedback-highlight');
                 });
             }
@@ -392,8 +431,8 @@
 
         // Update elbows if present
         if (data.elbows) {
-            const l = data.elbows.left_img || (data.elbows.left ? {x: data.elbows.left.x * 100 / (data.svg_width||1), y: data.elbows.left.y * 100 / (data.svg_height||1)} : null);
-            const r = data.elbows.right_img || (data.elbows.right ? {x: data.elbows.right.x * 100 / (data.svg_width||1), y: data.elbows.right.y * 100 / (data.svg_height||1)} : null);
+            const l = data.elbows.left_img || (data.elbows.left ? {x: data.elbows.left.x * wallWidth / (data.svg_width||1), y: data.elbows.left.y * wallHeight / (data.svg_height||1)} : null);
+            const r = data.elbows.right_img || (data.elbows.right ? {x: data.elbows.right.x * wallWidth / (data.svg_width||1), y: data.elbows.right.y * wallHeight / (data.svg_height||1)} : null);
             updateSystemElbow('sys_elbow_l', l);
             updateSystemElbow('sys_elbow_r', r);
         }
@@ -431,37 +470,43 @@
     const wallWidthOrig = {{ wall.wall_image.width|default:100 }};
 
     function applyCalibration() {
-        if (!calibrationInv || !wallSvgRoot) return;
-
-        // Get original SVG viewBox dimensions
-        const viewBoxStr = wallSvgRoot.getAttribute('viewBox');
-        let W_svg = 2500, H_svg = 3330; 
-        if (viewBoxStr) {
-            const parts = viewBoxStr.split(/[\s,]+/).filter(s => s.length > 0);
-            if (parts.length === 4) {
-                W_svg = parseFloat(parts[2]);
-                H_svg = parseFloat(parts[3]);
-            }
-        }
-
-        const h11 = calibrationInv[0][0], h12 = calibrationInv[0][1], h13 = calibrationInv[0][2];
-        const h21 = calibrationInv[1][0], h22 = calibrationInv[1][1], h23 = calibrationInv[1][2];
-        const h31 = calibrationInv[2][0], h32 = calibrationInv[2][1], h33 = calibrationInv[2][2];
-
-        // Map SVG (0..W_svg) -> 100x100 percentage layout
-        const m11 = (100 / W_svg) * h11, m21 = (100 / W_svg) * h21, m31 = (1 / W_svg) * h31;
-        const m12 = (100 / H_svg) * h12, m22 = (100 / H_svg) * h22, m32 = (1 / H_svg) * h32;
-        const m13 = 100 * h13,           m23 = 100 * h23,           m33 = h33;
-
-        const container = document.getElementById('wallSvgContainer');
-        if (container) {
-            const matrixStr = `${m11}, ${m21}, 0, ${m31}, ${m12}, ${m22}, 0, ${m32}, 0, 0, 1, 0, ${m13}, ${m23}, 0, ${m33}`;
-            container.style.transformBox = 'view-box';
-            container.style.transformOrigin = '0px 0px';
-            container.style.transform = `matrix3d(${matrixStr})`;
+        console.log('applyCalibration called');
+        if (!calibrationInv) {
+            console.log('No calibrationInv');
+            return;
         }
         
-        console.log(`Calibration applied in percentage-space mapping from ${W_svg}x${H_svg}`);
+        const svgOverlay = document.getElementById('svgOverlay');
+        if (!svgOverlay) {
+            console.log('No svgOverlay');
+            return;
+        }
+        
+        const h11 = calibrationInv[0][0], h12 = calibrationInv[0][1], h13 = calibrationInv[0][2];
+        const h21 = calibrationInv[1][0], h22 = calibrationInv[1][1], h23 = calibrationInv[1][2];
+        const h31 = calibrationInv[2][0], h32 = calibrationInv[2][1]; // h33 is 1
+        
+        // Build CSS matrix3d in COLUMN-MAJOR order
+        const cssMatrix = [
+            h11, h21, 0, h31,
+            h12, h22, 0, h32,
+            0, 0, 1, 0,
+            h13, h23, 0, 1
+        ];
+        
+        svgOverlay.style.transform = `matrix3d(${cssMatrix.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
+        svgOverlay.style.transformOrigin = '0 0';
+        console.log('Transformation applied:', cssMatrix);
+        console.log('Calibration applied successfully');
+    }
+
+    function updateOpacity(value) {
+        const svgOverlay = document.getElementById('svgOverlay');
+        if (svgOverlay) {
+            const opacity = value / 100;
+            svgOverlay.style.opacity = opacity;
+            document.getElementById('opacityValue').textContent = `${value}%`;
+        }
     }
 
     if (wallImage) {
@@ -469,52 +514,52 @@
         wallImage.onload = applyCalibration;
     }
 
-    // SVG Overlay Loading
-    async function loadWallSvg() {
-        if (wallSvgRoot) return;
-        {% if wall.svg_file %}
-        try {
-            const response = await fetch('{{ wall.svg_file.url }}');
-            const svgText = await response.text();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(svgText, 'image/svg+xml');
-            const svgElement = doc.querySelector('svg');
-            
-            if (svgElement) {
-                // Clear container
-                const container = document.getElementById('wallSvgContainer');
-                container.innerHTML = '';
-                
-                // Copy all children instead of appending the <svg> tag as a child
-                // This avoids nested viewBox scaling issues and maps coordinates directly to our warp
-                const children = Array.from(svgElement.childNodes);
-                children.forEach(child => {
-                    container.appendChild(child.cloneNode(true));
-                });
-                
-                wallSvgRoot = svgElement; // Keep original root for dimension parsing (applyCalibration needs it)
-                console.log('Wall SVG content appended directly to container');
-                
-                applyCalibration();
-            }
-        } catch (error) {
-            console.error('Error loading wall SVG:', error);
-        }
-        {% endif %}
-    }
-
     showSvgToggle.onchange = (e) => {
+        console.log('SVG toggle changed:', e.target.checked);
+        const svgOverlay = document.getElementById('svgOverlay');
+        if (!svgOverlay) {
+            console.log('No svgOverlay');
+            return;
+        }
+        
         if (e.target.checked) {
-            wallSvgContainer.classList.remove('opacity-0');
-            wallSvgContainer.classList.add('opacity-50');
-            if (!wallSvgRoot) loadWallSvg();
+            svgOverlay.classList.remove('opacity-0');
+            svgOverlay.classList.add('opacity-100');
+            svgOverlay.classList.remove('pointer-events-none');
+            applyCalibration();
         } else {
-            wallSvgContainer.classList.add('opacity-0');
-            wallSvgContainer.classList.remove('opacity-50');
+            svgOverlay.classList.add('opacity-0');
+            svgOverlay.classList.remove('opacity-100');
+            svgOverlay.classList.add('pointer-events-none');
         }
     };
+    
+    // System State Elements
+    const stateMode = document.getElementById('stateMode');
+    const stateRoute = document.getElementById('stateRoute');
+    const stateText = document.getElementById('stateText');
+    const lastPoseTimeEl = document.getElementById('lastPoseTime');
 
     // Initial setup
-    updateUIFromLandmarks();
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('DOMContentLoaded event listener called');
+        
+        // Show loading indicator while page initializes
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        loadingOverlay.style.display = 'flex';
+        
+        updateUIFromLandmarks();
+        
+        // Apply calibration after a short delay (comment out to test without calibration)
+        /*
+        setTimeout(() => {
+            if (showSvgToggle.checked) {
+                applyCalibration();
+            }
+            loadingOverlay.style.display = 'none';
+        }, 500);
+        */
+        loadingOverlay.style.display = 'none';
+    });
 </script>
 {% endblock %}
