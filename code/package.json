@@ -1,5 +1,7 @@
 {
   "dependencies": {
-    "cross-env": "^10.0.0"
+    "@sparticuz/chromium": "^143.0.4",
+    "cross-env": "^10.0.0",
+    "puppeteer-core": "^24.40.0"
   }
 }

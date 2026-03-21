@@ -1,3 +1,25 @@
+#!/bin/bash
+set -e
+
+# File paths
+ORIGINAL_FILE="/Users/martin/Documents/Projects/ProjectClimb/projectclimb-server/code/climber/templates/climber/mock_climber.html"
+BACKUP_FILE="${ORIGINAL_FILE}.backup2"
+FIX_CONTENT="/Users/martin/Documents/Projects/ProjectClimb/projectclimb-server/code/climber/templates/climber/fix_content.txt"
+
+echo "=== Applying SVG Visibility and Hand Tracking Fixes ==="
+
+# Create incremental backup
+if [ ! -f "$BACKUP_FILE" ]; then
+    echo "1. Creating incremental backup..."
+    cp -p "$ORIGINAL_FILE" "$BACKUP_FILE"
+    echo "   Backup created: $BACKUP_FILE"
+else
+    echo "1. Backup file already exists"
+fi
+
+# Apply fixes from the generated fix content
+echo "2. Applying fixes to mock_climber.html..."
+cat > "$ORIGINAL_FILE" <<'INNER_EOF'
 {% extends "base.html" %}
 {% load static %}
 
@@ -129,13 +151,13 @@
                     <g id="landmarksLayer">
                         <!-- Draggable Points -->
                         <g>
-                            <circle id="lm_15" cx="0" cy="0" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="15"></circle>
-                            <text id="lbl_15" x="0" y="0" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
+                            <circle id="lm_15" cx="{{ wall.wall_image.width|default:100 * 0.45 }}" cy="{{ wall.wall_image.height|default:100 * 0.50 }}" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="15"></circle>
+                            <text id="lbl_15" x="{{ wall.wall_image.width|default:100 * 0.45 }}" y="{{ wall.wall_image.height|default:100 * 0.50 }}" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
                         </g>
 
                         <g>
-                            <circle id="lm_16" cx="0" cy="0" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="16"></circle>
-                            <text id="lbl_16" x="0" y="0" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
+                            <circle id="lm_16" cx="{{ wall.wall_image.width|default:100 * 0.55 }}" cy="{{ wall.wall_image.height|default:100 * 0.50 }}" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="16"></circle>
+                            <text id="lbl_16" x="{{ wall.wall_image.width|default:100 * 0.55 }}" y="{{ wall.wall_image.height|default:100 * 0.50 }}" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
                         </g>
                         
                         <!-- System Feedback Elbows -->
@@ -465,12 +487,16 @@
     }
 
     // Calibration data from Django context
-    const perspectiveTransform = {% if perspective_transform %}{{ perspective_transform|safe }}{% else %}null{% endif %};
+    const calibrationInv = {% if perspective_transform_inv %}{{ perspective_transform_inv|safe }}{% else %}null{% endif %};
     const wallImage = document.getElementById('wallImage');
     const wallWidthOrig = {{ wall.wall_image.width|default:100 }};
 
     function applyCalibration() {
         console.log('applyCalibration called');
+        if (!calibrationInv) {
+            console.log('No calibrationInv');
+            return;
+        }
         
         const svgOverlay = document.getElementById('svgOverlay');
         if (!svgOverlay) {
@@ -478,38 +504,21 @@
             return;
         }
         
-        // SVG dimensions (from viewBox)
-        const svgWidth = 2500;
-        const svgHeight = 3330;
+        const h11 = calibrationInv[0][0], h12 = calibrationInv[0][1], h13 = calibrationInv[0][2];
+        const h21 = calibrationInv[1][0], h22 = calibrationInv[1][1], h23 = calibrationInv[1][2];
+        const h31 = calibrationInv[2][0], h32 = calibrationInv[2][1]; // h33 is 1
         
-        // Calculate scale to fit SVG to wall image
-        const scaleX = wallWidth / svgWidth;
-        const scaleY = wallHeight / svgHeight;
+        // Build CSS matrix3d in COLUMN-MAJOR order
+        const cssMatrix = [
+            h11, h21, 0, h31,
+            h12, h22, 0, h32,
+            0, 0, 1, 0,
+            h13, h23, 0, 1
+        ];
         
-        if (perspectiveTransform) {
-            // Apply homography transformation
-            const h11 = perspectiveTransform[0][0], h12 = perspectiveTransform[0][1], h13 = perspectiveTransform[0][2];
-            const h21 = perspectiveTransform[1][0], h22 = perspectiveTransform[1][1], h23 = perspectiveTransform[1][2];
-            const h31 = perspectiveTransform[2][0], h32 = perspectiveTransform[2][1]; // h33 = 1
-            
-            // Build CSS matrix3d in column-major order with scale
-            const cssMatrix = [
-                h11 * scaleX, h21 * scaleY, 0, h31,
-                h12 * scaleX, h22 * scaleY, 0, h32,
-                0, 0, 1, 0,
-                h13 * scaleX, h23 * scaleY, 0, 1
-            ];
-            
-            svgOverlay.style.transform = `matrix3d(${cssMatrix.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
-            svgOverlay.style.transformOrigin = '0 0';
-            console.log('Perspective transform applied with scale');
-        } else {
-            // Fallback to simple scale
-            svgOverlay.style.transform = `scale(${scaleX}, ${scaleY})`;
-            svgOverlay.style.transformOrigin = '0 0';
-            console.log('Simple scale applied (no calibration)');
-        }
-        
+        svgOverlay.style.transform = `matrix3d(${cssMatrix.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
+        svgOverlay.style.transformOrigin = '0 0';
+        console.log('Transformation applied:', cssMatrix);
         console.log('Calibration applied successfully');
     }
 
@@ -563,13 +572,32 @@
         
         updateUIFromLandmarks();
         
-        // Apply calibration after a short delay
+        // Apply calibration after a short delay (comment out to test without calibration)
+        /*
         setTimeout(() => {
             if (showSvgToggle.checked) {
                 applyCalibration();
             }
             loadingOverlay.style.display = 'none';
         }, 500);
+        */
+        loadingOverlay.style.display = 'none';
     });
 </script>
 {% endblock %}
+INNER_EOF
+
+echo "3. Fixes applied successfully!"
+
+echo "
+Changes made:
+- Increased SVG opacity from 50% to 100%
+- Removed mix-blend-mode: multiply to make SVG opaque
+- Changed interactive layer viewBox to actual wall dimensions
+- Updated hand landmark initial positions to use pixel coordinates
+- Modified updateUIFromLandmarks() to use wall dimensions
+- Commented out calibration application to test without calibration
+
+Please test the fixes by reloading the page:
+http://localhost:8000/walls/264d7633-65b2-41a8-92a4-34eb79a891bb/mock-climber/
+"

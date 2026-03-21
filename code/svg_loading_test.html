@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Loading Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .log { font-family: monospace; margin-top: 10px; padding: 10px; background-color: #f5f5f5; border-radius: 3px; white-space: pre-wrap; }
+        button { padding: 5px 10px; margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <h1>SVG Loading Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div class="log" id="testLog"></div>
+    </div>
+    
+    <div class="test-section">
+        <button onclick="testDOMElements()">Test DOM Elements</button>
+        <button onclick="testFetchSVG()">Test Fetch SVG</button>
+        <button onclick="testDOMParser()">Test DOM Parser</button>
+    </div>
+
+    <script>
+        const logEl = document.getElementById('testLog');
+        
+        function log(message) {
+            logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function testDOMElements() {
+            log('=== Testing DOM Elements ===');
+            log(`document.readyState: ${document.readyState}`);
+            log(`showSvgToggle: ${document.getElementById('showSvgToggle')}`);
+            log(`loadSvgBtn: ${document.getElementById('loadSvgBtn')}`);
+            log(`wallSvgContainer: ${document.getElementById('wallSvgContainer')}`);
+            log('');
+        }
+        
+        function testFetchSVG() {
+            log('=== Testing SVG Fetch ===');
+            const svgUrl = '/media/svg_files/wall_nPOL7Dy.svg'; // Replace with actual SVG URL
+            log(`Fetching SVG from: ${svgUrl}`);
+            
+            fetch(svgUrl)
+                .then(response => {
+                    log(`Response status: ${response.status}`);
+                    log(`Response headers: ${JSON.stringify([...response.headers.entries()], null, 2)}`);
+                    return response.text();
+                })
+                .then(text => {
+                    log(`SVG text length: ${text.length}`);
+                    log(`First 50 characters: ${text.slice(0, 50)}`);
+                })
+                .catch(error => {
+                    log(`Error: ${error.message}`);
+                    log(`Stack: ${error.stack}`);
+                });
+        }
+        
+        function testDOMParser() {
+            log('=== Testing DOM Parser ===');
+            const svgUrl = '/media/svg_files/wall_nPOL7Dy.svg'; // Replace with actual SVG URL
+            
+            fetch(svgUrl)
+                .then(response => response.text())
+                .then(text => {
+                    log('SVG text received');
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(text, 'image/svg+xml');
+                    const svgElement = doc.querySelector('svg');
+                    
+                    log(`SVG element: ${svgElement}`);
+                    if (svgElement) {
+                        log(`SVG viewBox: ${svgElement.getAttribute('viewBox')}`);
+                        log(`SVG width: ${svgElement.getAttribute('width')}`);
+                        log(`SVG height: ${svgElement.getAttribute('height')}`);
+                        
+                        const children = Array.from(svgElement.childNodes);
+                        log(`Number of children: ${children.length}`);
+                        children.forEach((child, index) => {
+                            log(`Child ${index}: ${child.outerHTML}`);
+                        });
+                    }
+                })
+                .catch(error => {
+                    log(`Error: ${error.message}`);
+                    log(`Stack: ${error.stack}`);
+                });
+        }
+        
+        // Test when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                log('DOMContentLoaded event fired');
+                testDOMElements();
+            });
+        } else {
+            log('DOM already loaded');
+            testDOMElements();
+        }
+    </script>
+</body>
+</html>

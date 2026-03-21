@@ -2,7 +2,8 @@ const WebSocket = require('ws');
 const http = require('http');
 const url = require('url');
 
-const PORT = 8080;
+// Get port from command-line arguments or environment variable, default to 8080
+const PORT = process.argv[2] ? parseInt(process.argv[2]) : (process.env.PORT ? parseInt(process.env.PORT) : 8080);
 const server = http.createServer();
 const wss = new WebSocket.Server({ server });
 

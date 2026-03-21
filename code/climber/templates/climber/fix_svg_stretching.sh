@@ -1,3 +1,26 @@
+#!/bin/bash
+set -e
+
+ORIGINAL_FILE="/Users/martin/Documents/Projects/ProjectClimb/projectclimb-server/code/climber/templates/climber/mock_climber.html"
+BACKUP_FILE="${ORIGINAL_FILE}.backup"
+
+# Check if we're running from the correct directory
+if [ ! -f "$ORIGINAL_FILE" ]; then
+    echo "Error: File not found at $ORIGINAL_FILE"
+    exit 1
+fi
+
+# Create backup if it doesn't exist
+if [ ! -f "$BACKUP_FILE" ]; then
+    echo "1. Creating backup of current file..."
+    cp -p "$ORIGINAL_FILE" "$BACKUP_FILE"
+    echo "   Backup created: $BACKUP_FILE"
+else
+    echo "1. Backup file already exists"
+fi
+
+# The complete fixed content
+cat > "$ORIGINAL_FILE" <<'INNER_EOF'
 {% extends "base.html" %}
 {% load static %}
 
@@ -18,13 +41,13 @@
                     </div>
                     <div class="pt-4 border-t border-gray-200">
                         <label for="svgOpacity" class="block text-sm font-medium text-gray-700 mb-2">
-                            SVG Opacity: <span id="opacityValue">100%</span>
+                            SVG Opacity: <span id="opacityValue">50%</span>
                         </label>
                         <input type="range" 
                                id="svgOpacity" 
                                min="0" 
                                max="100" 
-                               value="100" 
+                               value="50" 
                                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                                oninput="updateOpacity(this.value)">
                     </div>
@@ -116,12 +139,12 @@
                 <img id="svgOverlay" 
                      src="{{ wall.svg_file.url }}" 
                      alt="Wall SVG Overlay" 
-                     class="absolute top-0 left-0 w-full h-full pointer-events-none opacity-100 transition-opacity duration-300"
-                     style="transform-origin: 0 0;" />
+                     class="absolute top-0 left-0 w-full h-full pointer-events-none opacity-50 transition-opacity duration-300"
+                     style="mix-blend-mode: multiply; transform-origin: 0 0;" />
                 {% endif %}
                 
                 <!-- Interactive Layer for Landmarks -->
-                <svg id="interactiveLayer" class="absolute top-0 left-0 w-full h-full" viewBox="0 0 {{ wall.wall_image.width|default:100 }} {{ wall.wall_image.height|default:100 }}" preserveAspectRatio="none">
+                <svg id="interactiveLayer" class="absolute top-0 left-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
                     <!-- Feedback layer (holds detected by system) -->
                     <g id="feedbackLayer"></g>
                     
@@ -129,18 +152,18 @@
                     <g id="landmarksLayer">
                         <!-- Draggable Points -->
                         <g>
-                            <circle id="lm_15" cx="0" cy="0" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="15"></circle>
-                            <text id="lbl_15" x="0" y="0" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
+                            <circle id="lm_15" cx="45" cy="50" r="1.8" class="fill-green-500 stroke-white stroke-[0.3] cursor-move landmark-handle" data-id="15"></circle>
+                            <text id="lbl_15" x="45" y="50" font-size="1.8" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">L</text>
                         </g>
 
                         <g>
-                            <circle id="lm_16" cx="0" cy="0" r="10" class="fill-green-500 stroke-white stroke-2 cursor-move landmark-handle" data-id="16"></circle>
-                            <text id="lbl_16" x="0" y="0" font-size="12" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
+                            <circle id="lm_16" cx="55" cy="50" r="1.8" class="fill-green-500 stroke-white stroke-[0.3] cursor-move landmark-handle" data-id="16"></circle>
+                            <text id="lbl_16" x="55" y="50" font-size="1.8" class="fill-white font-bold pointer-events-none text-shadow" text-anchor="middle" dominant-baseline="middle">R</text>
                         </g>
                         
                         <!-- System Feedback Elbows -->
-                        <circle id="sys_elbow_l" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
-                        <circle id="sys_elbow_r" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_l" r="1.2" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-[0.2]" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_r" r="1.2" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-[0.2]" cx="0" cy="0"></circle>
                     </g>
                 </svg>
                 
@@ -161,11 +184,11 @@
 <style>
     .landmark-handle:hover {
         filter: brightness(1.2);
-        r: 12;
+        r: 1.8;
     }
     .landmark-handle.dragging {
         fill: #3b82f6 !important;
-        r: 12;
+        r: 2;
     }
     #interactiveLayer {
         cursor: crosshair;
@@ -261,12 +284,12 @@
             const el = document.getElementById(`lm_${id}`);
             const lbl = document.getElementById(`lbl_${id}`);
             if (el) {
-                el.setAttribute('cx', landmarks[id].x * wallWidth);
-                el.setAttribute('cy', landmarks[id].y * wallHeight);
+                el.setAttribute('cx', landmarks[id].x * 100);
+                el.setAttribute('cy', landmarks[id].y * 100);
             }
             if (lbl) {
-                lbl.setAttribute('x', landmarks[id].x * wallWidth);
-                lbl.setAttribute('y', landmarks[id].y * wallHeight);
+                lbl.setAttribute('x', landmarks[id].x * 100);
+                lbl.setAttribute('y', landmarks[id].y * 100);
             }
         });
     }
@@ -431,8 +454,8 @@
 
         // Update elbows if present
         if (data.elbows) {
-            const l = data.elbows.left_img || (data.elbows.left ? {x: data.elbows.left.x * wallWidth / (data.svg_width||1), y: data.elbows.left.y * wallHeight / (data.svg_height||1)} : null);
-            const r = data.elbows.right_img || (data.elbows.right ? {x: data.elbows.right.x * wallWidth / (data.svg_width||1), y: data.elbows.right.y * wallHeight / (data.svg_height||1)} : null);
+            const l = data.elbows.left_img || (data.elbows.left ? {x: data.elbows.left.x * 100 / (data.svg_width||1), y: data.elbows.left.y * 100 / (data.svg_height||1)} : null);
+            const r = data.elbows.right_img || (data.elbows.right ? {x: data.elbows.right.x * 100 / (data.svg_width||1), y: data.elbows.right.y * 100 / (data.svg_height||1)} : null);
             updateSystemElbow('sys_elbow_l', l);
             updateSystemElbow('sys_elbow_r', r);
         }
@@ -465,12 +488,16 @@
     }
 
     // Calibration data from Django context
-    const perspectiveTransform = {% if perspective_transform %}{{ perspective_transform|safe }}{% else %}null{% endif %};
+    const calibrationInv = {% if perspective_transform_inv %}{{ perspective_transform_inv|safe }}{% else %}null{% endif %};
     const wallImage = document.getElementById('wallImage');
     const wallWidthOrig = {{ wall.wall_image.width|default:100 }};
 
     function applyCalibration() {
         console.log('applyCalibration called');
+        if (!calibrationInv) {
+            console.log('No calibrationInv');
+            return;
+        }
         
         const svgOverlay = document.getElementById('svgOverlay');
         if (!svgOverlay) {
@@ -478,38 +505,21 @@
             return;
         }
         
-        // SVG dimensions (from viewBox)
-        const svgWidth = 2500;
-        const svgHeight = 3330;
+        const h11 = calibrationInv[0][0], h12 = calibrationInv[0][1], h13 = calibrationInv[0][2];
+        const h21 = calibrationInv[1][0], h22 = calibrationInv[1][1], h23 = calibrationInv[1][2];
+        const h31 = calibrationInv[2][0], h32 = calibrationInv[2][1]; // h33 is 1
         
-        // Calculate scale to fit SVG to wall image
-        const scaleX = wallWidth / svgWidth;
-        const scaleY = wallHeight / svgHeight;
+        // Build CSS matrix3d in COLUMN-MAJOR order
+        const cssMatrix = [
+            h11, h21, 0, h31,
+            h12, h22, 0, h32,
+            0, 0, 1, 0,
+            h13, h23, 0, 1
+        ];
         
-        if (perspectiveTransform) {
-            // Apply homography transformation
-            const h11 = perspectiveTransform[0][0], h12 = perspectiveTransform[0][1], h13 = perspectiveTransform[0][2];
-            const h21 = perspectiveTransform[1][0], h22 = perspectiveTransform[1][1], h23 = perspectiveTransform[1][2];
-            const h31 = perspectiveTransform[2][0], h32 = perspectiveTransform[2][1]; // h33 = 1
-            
-            // Build CSS matrix3d in column-major order with scale
-            const cssMatrix = [
-                h11 * scaleX, h21 * scaleY, 0, h31,
-                h12 * scaleX, h22 * scaleY, 0, h32,
-                0, 0, 1, 0,
-                h13 * scaleX, h23 * scaleY, 0, 1
-            ];
-            
-            svgOverlay.style.transform = `matrix3d(${cssMatrix.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
-            svgOverlay.style.transformOrigin = '0 0';
-            console.log('Perspective transform applied with scale');
-        } else {
-            // Fallback to simple scale
-            svgOverlay.style.transform = `scale(${scaleX}, ${scaleY})`;
-            svgOverlay.style.transformOrigin = '0 0';
-            console.log('Simple scale applied (no calibration)');
-        }
-        
+        svgOverlay.style.transform = `matrix3d(${cssMatrix.map(n => Number.isFinite(n) ? n : 0).join(',')})`;
+        svgOverlay.style.transformOrigin = '0 0';
+        console.log('Transformation applied:', cssMatrix);
         console.log('Calibration applied successfully');
     }
 
@@ -537,12 +547,12 @@
         
         if (e.target.checked) {
             svgOverlay.classList.remove('opacity-0');
-            svgOverlay.classList.add('opacity-100');
+            svgOverlay.classList.add('opacity-50');
             svgOverlay.classList.remove('pointer-events-none');
             applyCalibration();
         } else {
             svgOverlay.classList.add('opacity-0');
-            svgOverlay.classList.remove('opacity-100');
+            svgOverlay.classList.remove('opacity-50');
             svgOverlay.classList.add('pointer-events-none');
         }
     };
@@ -573,3 +583,20 @@
     });
 </script>
 {% endblock %}
+INNER_EOF
+
+echo "2. Fix applied successfully!"
+
+echo "
+Changes made:
+- Replaced complex SVG DOM manipulation with simple <img> tag
+- Updated perspective transform implementation
+- Changed to column-major matrix3d format  
+- Added SVG opacity control
+- Added loading indicator
+- Simplified calibration function
+
+Please test by reloading the mock climber page
+Backup file saved at: $BACKUP_FILE
+"
+

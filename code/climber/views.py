@@ -633,13 +633,10 @@ class MockClimberView(UUIDLookupMixin, DetailView):
         
         if calibration and calibration.perspective_transform:
             try:
-                import numpy as np
-                h = np.array(calibration.perspective_transform, dtype=np.float32)
-                h_inv = np.linalg.inv(h)
-                context['perspective_transform_inv'] = h_inv.tolist()
+                context['perspective_transform'] = calibration.perspective_transform
             except Exception as e:
                 from loguru import logger
-                logger.error(f"Error calculating inverse transform: {e}")
+                logger.error(f"Error passing perspective transform: {e}")
         
         return context
 
