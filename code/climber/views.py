@@ -1,4 +1,5 @@
-from django.shortcuts import render, get_object_or_404, redirect # Ensure get_object_or_404 is imported
+from django.shortcuts import render, get_object_or_404, redirect
+import numpy as np
 from django.views.generic import TemplateView, ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.http import HttpResponse, Http404, JsonResponse # Added for HTMX responses and Http404
@@ -633,10 +634,58 @@ class MockClimberView(UUIDLookupMixin, DetailView):
         
         if calibration and calibration.perspective_transform:
             try:
-                context['perspective_transform'] = calibration.perspective_transform
+                # 1. Get dimensions
+                from .svg_utils import parse_svg_file
+                svg_parser = parse_svg_file(wall.svg_file.path)
+                vw, vh = svg_parser.get_svg_dimensions()
+                ww, wh = wall.wall_image.width, wall.wall_image.height
+                
+                # 2. Extract stored matrix (M)
+                M = np.array(calibration.perspective_transform)
+                
+                # 3. Standardize M to Absolute Image Pixels -> Absolute SVG Units
+                if calibration.calibration_type == 'manual_points':
+                    # Manual stores Normalized (0-1) Image -> Normalized (0-1) SVG
+                    # M_abs = S_svg @ M @ S_img_inv
+                    S_svg = np.diag([vw, vh, 1])
+                    S_img_inv = np.diag([1/ww, 1/wh, 1])
+                    M_abs = S_svg @ M @ S_img_inv
+                else:
+                    # ArUco stores Camera Pixels -> SVG Units
+                    # We might need to scale from Camera Pixels to Wall Image Pixels
+                    # Principal point in camera_matrix tells us camera resolution
+                    try:
+                        cam_matrix = np.array(calibration.camera_matrix)
+                        if cam_matrix.size >= 9:
+                            # camera_matrix is [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
+                            # resolution is roughly (2*cx, 2*cy)
+                            cw = 2 * cam_matrix[0, 2]
+                            ch = 2 * cam_matrix[1, 2]
+                            # If camera resolution differs from wall image, adjust
+                            if cw > 0 and ch > 0 and (abs(cw - ww) > 5 or abs(ch - wh) > 5):
+                                # M maps Cam -> SVG. We want Wall -> SVG.
+                                # M_wall = M_cam @ S_wall_to_cam
+                                S_wall_to_cam = np.diag([cw/ww, ch/wh, 1])
+                                M_abs = M @ S_wall_to_cam
+                            else:
+                                M_abs = M
+                        else:
+                            M_abs = M
+                    except (AttributeError, IndexError, TypeError):
+                        M_abs = M
+                
+                context['image_to_svg_transform'] = M_abs.tolist()
+                
+                # 4. Invert to get SVG Units -> Absolute Image Pixels
+                try:
+                    svg_to_image = np.linalg.inv(M_abs)
+                    context['svg_to_image_transform'] = svg_to_image.tolist()
+                except np.linalg.LinAlgError:
+                    context['svg_to_image_transform'] = None
+                    
             except Exception as e:
                 from loguru import logger
-                logger.error(f"Error passing perspective transform: {e}")
+                logger.error(f"Error calculating perspective transforms: {e}")
         
         return context
 
