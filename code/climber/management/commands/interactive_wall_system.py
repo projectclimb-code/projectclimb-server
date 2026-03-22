@@ -21,13 +21,14 @@ from climber.calibration.calibration_utils import CalibrationUtils
 class TouchTracker:
     """Track touch durations with tolerance for dropped frames"""
     
-    def __init__(self, touch_duration=1.0, lost_tolerance=0.5):
+    def __init__(self, touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False):
         self.touch_duration = touch_duration
         self.lost_tolerance = lost_tolerance
+        self.multi_trigger = multi_trigger
         
         self.touch_start_times = {}  # hold_id -> timestamp
         self.touch_last_seen = {}    # hold_id -> timestamp
-        self.sent_events = set()     # Set of hold_ids for which events were sent
+        self.sent_events = {}       # hold_id -> last threshold index reached (int)
         
     def update_touches(self, touched_holds, timestamp):
         """Update tracking based on currently touched holds"""
@@ -55,7 +56,7 @@ class TouchTracker:
         if hold_id in self.touch_last_seen:
             del self.touch_last_seen[hold_id]
         if hold_id in self.sent_events:
-            self.sent_events.remove(hold_id)
+            del self.sent_events[hold_id]
             logger.debug(f"Reset touch tracking for hold {hold_id}")
             
     def clear_all(self):
@@ -69,15 +70,24 @@ class TouchTracker:
         
         for hold_id, start_time in list(self.touch_start_times.items()):
             touch_duration = timestamp - start_time
+            # Here we hardcode 3.0s intervals for button cycling, 
+            # though the Tracker could be made more generic.
             if touch_duration >= self.touch_duration:
-                # Only report as ready once per touch sequence
-                if hold_id not in self.sent_events:
+                intervals = int(touch_duration // self.touch_duration)
+                last_triggered = self.sent_events.get(hold_id, 0)
+                
+                if intervals > last_triggered:
+                    # If not multi-trigger, only fire once (step 1)
+                    if not self.multi_trigger and last_triggered > 0:
+                        continue
+                        
                     ready_holds.append({
                         'hold_id': hold_id,
-                        'touch_duration': touch_duration
+                        'touch_duration': touch_duration,
+                        'step': intervals
                     })
-                    self.sent_events.add(hold_id)
-                    logger.debug(f"Hold {hold_id} ready after {touch_duration:.2f}s")
+                    self.sent_events[hold_id] = intervals
+                    logger.debug(f"Hold {hold_id} trigger step {intervals} at {touch_duration:.2f}s")
         
         return ready_holds
 
@@ -177,34 +187,74 @@ class OutputWebSocketClient:
                 self.websocket = await websockets.connect(self.url)
                 logger.info("Successfully connected to output WebSocket")
                 self.current_reconnect_delay = self.reconnect_delay
+                
+                # Start sender task
+                if self.sender_task and not self.sender_task.done():
+                    self.sender_task.cancel()
                 self.sender_task = asyncio.create_task(self.message_sender())
-                await self.keep_alive()
-            except Exception as e:
-                logger.error(f"Output WebSocket error: {e}")
+                
+                # Start keep-alive task
+                keep_alive_task = asyncio.create_task(self.keep_alive())
+                
+                # Wait for either the connection to close or tasks to be cancelled
+                try:
+                    await asyncio.gather(
+                        self.websocket.wait_closed(),
+                        keep_alive_task,
+                        return_exceptions=True
+                    )
+                except Exception as e:
+                    logger.debug(f"Connection monitoring task completed: {e}")
+                
+            except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, ConnectionRefusedError, OSError) as e:
+                logger.error(f"Output WebSocket connection error: {e}")
                 if self.running:
                     await self._wait_and_reconnect()
+            except asyncio.CancelledError:
+                logger.info("Output WebSocket connection task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error in output WebSocket: {e}")
+                if self.running:
+                    await self._wait_and_reconnect()
+            finally:
+                if self.sender_task and not self.sender_task.done():
+                    self.sender_task.cancel()
     
     async def _wait_and_reconnect(self):
         await asyncio.sleep(self.current_reconnect_delay)
         self.current_reconnect_delay = min(self.current_reconnect_delay * 2, 60.0)
     
     async def keep_alive(self):
-        while self.running and self.websocket:
-            await asyncio.sleep(30)
-            if self.websocket:
+        try:
+            while self.running and self.websocket:
+                await asyncio.sleep(30)
                 await self.websocket.ping()
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        except Exception as e:
+            logger.debug(f"Keep-alive error: {e}")
     
     async def message_sender(self):
-        while self.running:
-            try:
-                message = await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
-                if self.websocket:
+        try:
+            while self.running and self.websocket:
+                try:
+                    message = await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
                     await self.websocket.send(json.dumps(message))
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Error sending message: {e}")
-                await self.message_queue.put(message)
+                    self.message_queue.task_done()
+                except asyncio.TimeoutError:
+                    continue
+                except websockets.exceptions.ConnectionClosed:
+                    logger.warning("Output WebSocket connection closed while sending")
+                    # Re-queue message for when we reconnect
+                    await self.message_queue.put(message)
+                    break
+                except Exception as e:
+                    logger.error(f"Error sending message: {e}")
+                    await asyncio.sleep(1) # Prevent tight infinite loops
+                    # Don't re-queue on unexpected JSON errors, etc. unless it's a network issue
+        except asyncio.CancelledError:
+            pass
     
     async def send_message(self, message):
         await self.message_queue.put(message)
@@ -215,7 +265,7 @@ class OutputWebSocketClient:
     
     def stop(self):
         self.running = False
-        if self.sender_task:
+        if self.sender_task and not self.sender_task.done():
             self.sender_task.cancel()
         if self.websocket:
             asyncio.create_task(self.websocket.close())
@@ -229,7 +279,7 @@ def validate_pose_data(data):
     return True, "Valid"
 
 
-def calculate_extended_hand_landmarks(landmarks, extension_percent=20.0):
+def calculate_extended_hand_landmarks(landmarks, extension_percent=5.0):
     """Calculate extended hand landmarks beyond the palm (ported from session tracker)"""
     # Left hand: 15 (wrist), 17 (pinky), 19 (index), 21 (thumb), 13 (elbow)
     # Right hand: 16 (wrist), 18 (pinky), 20 (index), 22 (thumb), 14 (elbow)
@@ -326,7 +376,7 @@ def transform_to_svg_coordinates(position, calibration_utils, transform_matrix, 
         
         if transformed_norm:
             res = (transformed_norm[0] * svg_size[0], transformed_norm[1] * svg_size[1])
-            logger.info(f"Transform (manual): norm {position} -> norm_svg {transformed_norm} -> svg {res}")
+            #logger.info(f"Transform (manual): norm {position} -> norm_svg {transformed_norm} -> svg {res}")
             return res
         return None
     else:
@@ -389,8 +439,8 @@ class InteractiveWallCommandSystem:
         self.buttons = {} # btn_id -> btn_data from SVG
         
         # We track hands fast (0.5s) to trigger buttons, ArUco slow (2.0s) to lock in holds
-        self.hand_tracker = TouchTracker(touch_duration=0.5, lost_tolerance=0.5)
-        self.aruco_tracker = TouchTracker(touch_duration=2.0, lost_tolerance=0.5)
+        self.hand_tracker = TouchTracker(touch_duration=3.0, lost_tolerance=0.5, multi_trigger=True)
+        self.aruco_tracker = TouchTracker(touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False)
         
         self.last_elbow_l = None
         self.last_elbow_r = None
@@ -399,6 +449,7 @@ class InteractiveWallCommandSystem:
         
         self.state = InteractiveState(loop_time=loop_time)
         self.running = False
+        self.last_state_send_time = 0.0
         
     async def setup(self):
         try:
@@ -463,31 +514,16 @@ class InteractiveWallCommandSystem:
         """Process hand touches for menu navigation"""
         self.hand_tracker.update_touches(touched_holds, timestamp)
         
-        # Check newly completed touches
+        # Check newly completed touches (every 3s)
         ready = self.hand_tracker.get_ready_holds(timestamp)
         for hold_data in ready:
             hold_id = hold_data['hold_id']
             if hold_id in self.state.control_buttons:
-                await self._on_control_button_pressed(hold_id, timestamp)
-        
-        # If in a continuous hold mode (easy, medium, hard), we exit mode immediately 
-        # when the button is released.
-        if self.state.mode in ['easy', 'medium', 'hard']:
-            # Find the button ID for the current mode
-            btn_id = None
-            for b_id, mode in self.state.button_to_mode.items():
-                if mode == self.state.mode:
-                    btn_id = b_id
-                    break
-                    
-            # If tracking says we've completely lost the touch
-            if btn_id and btn_id not in self.hand_tracker.touch_start_times:
-                logger.info(f"Hand removed from {btn_id}. Exiting {self.state.mode} mode.")
-                self.state.mode = None
-                await self.send_system_state()
+                await self._on_control_button_pressed(hold_id, timestamp, step=hold_data['step'])
 
-    async def _on_control_button_pressed(self, btn_id: str, timestamp: float):
-        """User pressed a control button with their hand"""
+    async def _on_control_button_pressed(self, btn_id: str, timestamp: float, step: int = 1):
+        """User pressed a control button with their hand. 
+        step 1 = 3s (mode activation), step 2+ = 6s+ (cycling)"""
         mode = self.state.button_to_mode.get(btn_id)
         if not mode:
             logger.warning(f"Button {btn_id} pressed but not mapped to a mode")
@@ -506,16 +542,22 @@ class InteractiveWallCommandSystem:
             
         # Modes: easy, medium, hard
         if self.state.mode != mode:
-            # Entered a new difficulty mode
-            self.state.mode = mode
-            logger.info(f"Entered {mode.upper()} mode.")
+            if step >= 1:
+                # Entered a new difficulty mode
+                self.state.mode = mode
+                logger.info(f"Entered {mode.upper()} mode at 3s.")
+                
+                # Fetch routes
+                self.state.available_routes = await self.fetch_routes_by_difficulty(mode)
+                self.state.current_route_index = 0
+                self.state.last_route_switch_time = timestamp
+        else:
+            # Already in this mode, cycle to next route if step >= 2 (6s, 9s...)
+            if step >= 2 and self.state.available_routes:
+                self.state.current_route_index = (self.state.current_route_index + 1) % len(self.state.available_routes)
+                logger.info(f"Cycled to next {mode.upper()} route at {step*3}s: {self.state.current_route_index}")
             
-            # Fetch routes
-            self.state.available_routes = await self.fetch_routes_by_difficulty(mode)
-            self.state.current_route_index = 0
-            self.state.last_route_switch_time = timestamp
-            
-            await self.send_system_state()
+        await self.send_system_state()
             
     async def _handle_aruco_touches(self, touched_holds: Set[str], timestamp: float):
         """Process ArUco marker touches for route drawing"""
@@ -544,18 +586,8 @@ class InteractiveWallCommandSystem:
             await self.send_system_state()
             
     async def _process_looping(self, timestamp: float):
-        """Process switching routes periodically for difficulty modes"""
-        if self.state.mode not in ['easy', 'medium', 'hard']:
-            return
-            
-        if not self.state.available_routes:
-            return
-            
-        if timestamp - self.state.last_route_switch_time >= self.state.loop_time:
-            self.state.current_route_index = (self.state.current_route_index + 1) % len(self.state.available_routes)
-            self.state.last_route_switch_time = timestamp
-            logger.debug(f"Looped to route index {self.state.current_route_index}")
-            await self.send_system_state()
+        """Automatic route looping is disabled in favor of manual selection"""
+        pass
 
     async def handle_pose_data(self, data):
         try:
@@ -588,14 +620,15 @@ class InteractiveWallCommandSystem:
             self.state.current_touched_holds = touched_holds_hand
             await self._handle_hand_touches(touched_holds_hand, timestamp)
             
-            # 2. Process ArUco
-            aruco_positions = extract_aruco_positions(data)
+            # 2. Process ArUco (only in draw mode, to create new temporary route)
             touched_holds_aruco = set()
-            for pos in aruco_positions:
-                svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
-                if svg_pos:
-                    holds, _ = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
-                    touched_holds_aruco.update(holds)
+            if self.state.mode == 'draw':
+                aruco_positions = extract_aruco_positions(data)
+                for pos in aruco_positions:
+                    svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+                    if svg_pos:
+                        holds, _ = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
+                        touched_holds_aruco.update(holds)
                     
             await self._handle_aruco_touches(touched_holds_aruco, timestamp)
             
@@ -638,9 +671,11 @@ class InteractiveWallCommandSystem:
 
     async def send_system_state(self):
         """Gather state and send to frontend"""
+        self.last_state_send_time = time.time()
         active_holds = []
         custom_text = ""
         route_name = ""
+        route_data = None
         
         if self.state.mode == 'draw':
             active_holds = list(self.state.temporary_route_holds)
@@ -650,10 +685,29 @@ class InteractiveWallCommandSystem:
             if self.state.available_routes:
                 route = self.state.available_routes[self.state.current_route_index]
                 route_name = route.name
+                route_data = route.data
                 
-                # Assume route.data has a 'holds' property that is a list of strings
-                if isinstance(route.data, dict) and 'holds' in route.data:
-                    active_holds = [str(h) for h in route.data['holds']]
+                # Robust extraction of holds from route.data
+                def extract_from_list(h_list):
+                    res = []
+                    for h in h_list:
+                        if isinstance(h, dict) and 'id' in h:
+                            res.append(str(h['id']))
+                        else:
+                            res.append(str(h))
+                    return res
+
+                if isinstance(route.data, list):
+                    active_holds = extract_from_list(route.data)
+                elif isinstance(route.data, dict):
+                    if 'holds' in route.data and isinstance(route.data['holds'], list):
+                        active_holds = extract_from_list(route.data['holds'])
+                    elif 'ids' in route.data and isinstance(route.data['ids'], list):
+                        active_holds = extract_from_list(route.data['ids'])
+                    elif 'problem' in route.data and isinstance(route.data['problem'], dict):
+                        prob = route.data['problem']
+                        if 'holds' in prob and isinstance(prob['holds'], list):
+                            active_holds = extract_from_list(prob['holds'])
                     
                 custom_text = f"{self.state.mode.capitalize()} ({self.state.current_route_index+1}/{len(self.state.available_routes)}): {route_name}"
             else:
@@ -666,6 +720,7 @@ class InteractiveWallCommandSystem:
             'mode': self.state.mode,
             'active_holds': active_holds, # Legacy field for compatibility
             'route_holds': active_holds if self.state.mode in ['easy', 'medium', 'hard', 'draw'] else [],
+            'route_data': route_data,
             'touched_holds': list(self.state.current_touched_holds),
             'elbows': {
                 'left': {'x': self.last_elbow_l[0], 'y': self.last_elbow_l[1]} if self.last_elbow_l else None,
@@ -683,6 +738,14 @@ class InteractiveWallCommandSystem:
         await self.output_client.send_message(message)
         logger.debug(f"Sent state update: {custom_text}")
 
+    async def _periodic_state_sender(self):
+        """Background task to ensure state is sent at least every second"""
+        while self.running:
+            now = time.time()
+            if now - self.last_state_send_time >= 1.0:
+                await self.send_system_state()
+            await asyncio.sleep(0.1)
+
     async def run(self):
         if not await self.setup():
             return
@@ -691,7 +754,8 @@ class InteractiveWallCommandSystem:
         try:
             await asyncio.gather(
                 self.input_client.start(),
-                self.output_client.start()
+                self.output_client.start(),
+                self._periodic_state_sender()
             )
         finally:
             self.running = False
