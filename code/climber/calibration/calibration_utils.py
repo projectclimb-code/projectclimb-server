@@ -216,7 +216,7 @@ class CalibrationUtils:
         self,
         calibration_images: List[np.ndarray],
         marker_size_meters: float = 0.1,
-        aruco_dict_name: str = 'DICT_4X4_50'
+        aruco_dict_name: str = 'DICT_6X6_250'
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], float]:
         """
         Calibrate camera using multiple images with ArUco markers

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ArUcoDetector:
     """Detects and processes ArUco markers for calibration"""
     
-    def __init__(self, dictionary_name: str = 'DICT_4X4_50', marker_size_meters: float = 0.1):
+    def __init__(self, dictionary_name: str = 'DICT_6X6_250', marker_size_meters: float = 0.1):
         """
         Initialize the ArUco detector
         

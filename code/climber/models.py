@@ -173,7 +173,7 @@ class WallCalibration(BaseModel):
     
     # ArUco marker data
     aruco_markers = models.JSONField(default=dict, help_text="ArUco marker positions and IDs")
-    aruco_dictionary = models.CharField(max_length=50, default='DICT_4X4_50')
+    aruco_dictionary = models.CharField(max_length=50, default='DICT_6X6_250')
     marker_size_meters = models.FloatField(default=0.1, help_text="Physical size of ArUco markers in meters")
     
     # Manual calibration data

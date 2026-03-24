@@ -69,7 +69,7 @@ class SessionViewSet(viewsets.ModelViewSet):
 
 class PhoneCameraView(TemplateView):
     """View for phone camera page."""
-    template_name = 'climber/phone_camera.html'
+    template_name = 'climber/phone_camera_aruco.html'
 
 class WebSocketRelayTestView(TemplateView):
     """View for WebSocket relay test page."""

@@ -52,7 +52,7 @@ def calibration_create(request, wall_id):
         # Handle form submission
         name = request.POST.get('name', f'Calibration {datetime.now().strftime("%Y-%m-%d %H:%M")}')
         description = request.POST.get('description', '')
-        aruco_dict = request.POST.get('aruco_dictionary', 'DICT_4X4_50')
+        aruco_dict = request.POST.get('aruco_dictionary', 'DICT_6X6_250')
         marker_size = float(request.POST.get('marker_size', 0.1))
         
         # Check if SVG file is available
@@ -177,7 +177,7 @@ def api_detect_markers(request, wall_id):
     
     wall = get_object_or_404(Wall, id=wall_id)
     image_file = request.FILES['image']
-    aruco_dict = request.POST.get('aruco_dictionary', 'DICT_4X4_50')
+    aruco_dict = request.POST.get('aruco_dictionary', 'DICT_6X6_250')
     marker_size = float(request.POST.get('marker_size', 0.1))
     
     try:

@@ -279,10 +279,10 @@ def validate_pose_data(data):
     return True, "Valid"
 
 
-def calculate_extended_hand_landmarks(landmarks, extension_percent=5.0):
-    """Calculate extended hand landmarks beyond the palm (ported from session tracker)"""
-    # Left hand: 15 (wrist), 17 (pinky), 19 (index), 21 (thumb), 13 (elbow)
-    # Right hand: 16 (wrist), 18 (pinky), 20 (index), 22 (thumb), 14 (elbow)
+def calculate_extended_hand_landmarks(landmarks, extension_percent=1.0):
+    """Calculate extended hand landmarks beyond the palm with robustness for missing landmarks"""
+    # Left hand indices: 15 (wrist), 17 (pinky), 19 (index), 21 (thumb), 13 (elbow)
+    # Right hand indices: 16 (wrist), 18 (pinky), 20 (index), 22 (thumb), 14 (elbow)
     new_positions = []
     
     for side in ['left', 'right']:
@@ -292,31 +292,59 @@ def calculate_extended_hand_landmarks(landmarks, extension_percent=5.0):
         thumb_idx = 21 if side == 'left' else 22
         elbow_idx = 13 if side == 'left' else 14
         
-        if (len(landmarks) > max(wrist_idx, pinky_idx, index_idx, thumb_idx, elbow_idx)):
-            wrist = landmarks[wrist_idx]
-            pinky = landmarks[pinky_idx]
-            index = landmarks[index_idx]
-            thumb = landmarks[thumb_idx]
-            elbow = landmarks[elbow_idx]
+        palm_indices = [wrist_idx, pinky_idx, index_idx, thumb_idx]
+        available_palm = []
+        for idx in palm_indices:
+            if idx < len(landmarks):
+                l = landmarks[idx]
+                # Check visibility if present; some formats might not have it
+                if l.get('visibility', 1.0) > 0.5:
+                    available_palm.append(l)
+        
+        if available_palm:
+            # Palm center: average of all visible palm landmarks
+            palm_x = sum(l['x'] for l in available_palm) / len(available_palm)
+            palm_y = sum(l['y'] for l in available_palm) / len(available_palm)
             
-            # Palm center
-            palm_x = (wrist['x'] + pinky['x'] + index['x'] + thumb['x']) / 4
-            palm_y = (wrist['y'] + pinky['y'] + index['y'] + thumb['y']) / 4
+            # Direction elbow -> palm (default to "up" if elbow missing)
+            elbow = None
+            if elbow_idx < len(landmarks):
+                e = landmarks[elbow_idx]
+                if e.get('visibility', 1.0) > 0.5:
+                    elbow = e
             
-            # Direction elbow -> palm
-            dir_x = palm_x - elbow['x']
-            dir_y = palm_y - elbow['y']
-            mag = np.sqrt(dir_x**2 + dir_y**2)
-            if mag > 0:
-                dir_x /= mag
-                dir_y /= mag
-                
-            # Palm size
-            palm_size = np.sqrt((pinky['x'] - index['x'])**2 + (pinky['y'] - index['y'])**2)
+            if elbow:
+                dir_x = palm_x - elbow['x']
+                dir_y = palm_y - elbow['y']
+                mag = np.sqrt(dir_x**2 + dir_y**2)
+                if mag > 0:
+                    dir_x /= mag
+                    dir_y /= mag
+                else:
+                    dir_x, dir_y = 0.0, -1.0
+            else:
+                dir_x, dir_y = 0.0, -1.0 # Default "up" in image coordinates (Y decreases upwards)
+
+            # Palm size estimation
+            palm_size = 0.05 # Default fallback
+            # Try to get distance between pinky and index if both are available
+            p_landmark = landmarks[pinky_idx] if pinky_idx < len(landmarks) and landmarks[pinky_idx].get('visibility', 1.0) > 0.5 else None
+            i_landmark = landmarks[index_idx] if index_idx < len(landmarks) and landmarks[index_idx].get('visibility', 1.0) > 0.5 else None
+            
+            if p_landmark and i_landmark:
+                palm_size = np.sqrt((p_landmark['x'] - i_landmark['x'])**2 + (p_landmark['y'] - i_landmark['y'])**2)
+            elif len(available_palm) >= 2:
+                # Use max distance between any two available palm landmarks as secondary fallback
+                max_d = 0
+                for a in available_palm:
+                    for b in available_palm:
+                        d = np.sqrt((a['x'] - b['x'])**2 + (a['y'] - b['y'])**2)
+                        if d > max_d: max_d = d
+                if max_d > 0: palm_size = max_d
+            
             ext_dist = palm_size * (extension_percent / 100.0)
-            
             extended_palm = (palm_x + dir_x * ext_dist, palm_y + dir_y * ext_dist)
-            elbow_pos = (elbow['x'], elbow['y'])
+            elbow_pos = (elbow['x'], elbow['y']) if elbow else None
             new_positions.append((extended_palm, elbow_pos))
         else:
             new_positions.append((None, None))
@@ -438,14 +466,12 @@ class InteractiveWallCommandSystem:
         
         self.buttons = {} # btn_id -> btn_data from SVG
         
-        # We track hands fast (0.5s) to trigger buttons, ArUco slow (2.0s) to lock in holds
-        self.hand_tracker = TouchTracker(touch_duration=3.0, lost_tolerance=0.5, multi_trigger=True)
+        # We track hands fast (1.0s tolerance) to trigger buttons, ArUco slow (0.5s tolerance) to lock in holds
+        self.hand_tracker = TouchTracker(touch_duration=2.0, lost_tolerance=1.0, multi_trigger=True)
         self.aruco_tracker = TouchTracker(touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False)
         
-        self.last_elbow_l = None
-        self.last_elbow_r = None
-        self.last_elbow_l_img = None
-        self.last_elbow_r_img = None
+        self.last_palm_l_img = None
+        self.last_palm_r_img = None
         
         self.state = InteractiveState(loop_time=loop_time)
         self.running = False
@@ -523,7 +549,7 @@ class InteractiveWallCommandSystem:
 
     async def _on_control_button_pressed(self, btn_id: str, timestamp: float, step: int = 1):
         """User pressed a control button with their hand. 
-        step 1 = 3s (mode activation), step 2+ = 6s+ (cycling)"""
+        step 1 = 2s (mode activation), step 2+ = 4s+ (cycling)"""
         mode = self.state.button_to_mode.get(btn_id)
         if not mode:
             logger.warning(f"Button {btn_id} pressed but not mapped to a mode")
@@ -545,17 +571,17 @@ class InteractiveWallCommandSystem:
             if step >= 1:
                 # Entered a new difficulty mode
                 self.state.mode = mode
-                logger.info(f"Entered {mode.upper()} mode at 3s.")
+                logger.info(f"Entered {mode.upper()} mode at 2s.")
                 
                 # Fetch routes
                 self.state.available_routes = await self.fetch_routes_by_difficulty(mode)
                 self.state.current_route_index = 0
                 self.state.last_route_switch_time = timestamp
         else:
-            # Already in this mode, cycle to next route if step >= 2 (6s, 9s...)
+            # Already in this mode, cycle to next route if step >= 2 (4s, 6s...)
             if step >= 2 and self.state.available_routes:
                 self.state.current_route_index = (self.state.current_route_index + 1) % len(self.state.available_routes)
-                logger.info(f"Cycled to next {mode.upper()} route at {step*3}s: {self.state.current_route_index}")
+                logger.info(f"Cycled to next {mode.upper()} route at {step*2}s: {self.state.current_route_index}")
             
         await self.send_system_state()
             
@@ -599,15 +625,13 @@ class InteractiveWallCommandSystem:
             img_height = data.get('height', 100)
             
             # 1. Process Hands
-            left_hand, right_hand, elbow_l, elbow_r = extract_hand_positions(data.get('landmarks', []))
+            left_hand, right_hand, _, _ = extract_hand_positions(data.get('landmarks', []))
             
-            # Transform and store elbow data for export
-            # We store BOTH SVG calibrated and RAW Image coordinates
-            self.last_elbow_l = transform_to_svg_coordinates(elbow_l, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
-            self.last_elbow_r = transform_to_svg_coordinates(elbow_r, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+            if left_hand: self.last_palm_l_img = (left_hand[0], left_hand[1])
+            else: self.last_palm_l_img = None
             
-            if elbow_l: self.last_elbow_l_img = (elbow_l[0] * 100, elbow_l[1] * 100)
-            if elbow_r: self.last_elbow_r_img = (elbow_r[0] * 100, elbow_r[1] * 100)
+            if right_hand: self.last_palm_r_img = (right_hand[0], right_hand[1])
+            else: self.last_palm_r_img = None
 
             touched_holds_hand = set()
             for h in [left_hand, right_hand]:
@@ -674,17 +698,20 @@ class InteractiveWallCommandSystem:
         self.last_state_send_time = time.time()
         active_holds = []
         custom_text = ""
+        text = ""
         route_name = ""
         route_data = None
         
         if self.state.mode == 'draw':
             active_holds = list(self.state.temporary_route_holds)
             custom_text = f"DRAW MODE: {len(active_holds)} Holds"
+            text = "Create your route"
             
         elif self.state.mode in ['easy', 'medium', 'hard']:
             if self.state.available_routes:
                 route = self.state.available_routes[self.state.current_route_index]
                 route_name = route.name
+                text = route_name
                 route_data = route.data
                 
                 # Robust extraction of holds from route.data
@@ -722,13 +749,12 @@ class InteractiveWallCommandSystem:
             'route_holds': active_holds if self.state.mode in ['easy', 'medium', 'hard', 'draw'] else [],
             'route_data': route_data,
             'touched_holds': list(self.state.current_touched_holds),
-            'elbows': {
-                'left': {'x': self.last_elbow_l[0], 'y': self.last_elbow_l[1]} if self.last_elbow_l else None,
-                'right': {'x': self.last_elbow_r[0], 'y': self.last_elbow_r[1]} if self.last_elbow_r else None,
-                'left_img': {'x': self.last_elbow_l_img[0], 'y': self.last_elbow_l_img[1]} if self.last_elbow_l_img else None,
-                'right_img': {'x': self.last_elbow_r_img[0], 'y': self.last_elbow_r_img[1]} if self.last_elbow_r_img else None
+            'palms': {
+                'left_img': {'x': self.last_palm_l_img[0], 'y': self.last_palm_l_img[1]} if self.last_palm_l_img else None,
+                'right_img': {'x': self.last_palm_r_img[0], 'y': self.last_palm_r_img[1]} if self.last_palm_r_img else None
             },
             'route_name': route_name,
+            'text': text,
             'custom_text': custom_text,
             'svg_width': self.svg_size[0],
             'svg_height': self.svg_size[1],

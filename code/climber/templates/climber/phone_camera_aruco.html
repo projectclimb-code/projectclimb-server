@@ -1,0 +1,434 @@
+
+{% comment %}
+{% extends "base.html" %}
+{% endcomment %}
+{% load static %}
+
+
+{% block content %}
+
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pose Stream</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+  <script async src="https://docs.opencv.org/4.7.0/opencv.js" type="text/javascript"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-6">Camera Stream</h1>
+    <div id="loadingOpencv" class="fixed top-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded shadow-lg z-50">
+      Loading OpenCV...
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Camera Settings</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div>
+          <label class="block text-sm font-medium">Select Camera:</label>
+          <select id="cameraSelect" class="border rounded px-2 py-1 w-full"></select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Zoom:</label>
+          <input id="zoomRange" type="range" min="1" max="1" step="0.1" value="1" class="w-full">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">ArUco Dict:</label>
+          <select id="arucoDictSelect" class="border rounded px-2 py-1 w-full">
+            <option value="6X6_250">6x6 (250)</option>
+            <option value="4X4_50">4x4 (50)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Mode:</label>
+          <span id="currentModeLabel" class="font-bold text-blue-600">POSE</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Connection Settings</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <input id="wsUrl" type="text" size="30" class="border rounded px-2 py-1 flex-grow" placeholder="ws://climb.net/ws/pose/">
+        <button id="connectBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Connect</button>
+        <button id="disconnectBtn" class="bg-gray-300 hover:bg-gray-400 text-black px-3 py-1 rounded">Disconnect</button>
+      </div>
+      <div id="status" class="mt-2 text-sm font-medium text-red-500">Disconnected</div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Display Options</h2>
+      <div class="flex flex-wrap gap-4">
+        <label><input type="radio" name="view" value="both" checked class="mr-1">Both</label>
+        <label><input type="radio" name="view" value="video" class="mr-1">Video only</label>
+        <label><input type="radio" name="view" value="pose" class="mr-1">Pose only</label>
+        <label><input type="radio" name="view" value="none" class="mr-1">None</label>
+      </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-2">Pose Send Rate</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex-1">
+          <label class="block text-sm font-medium mb-1">Max Send Rate: <span id="rateValue">0</span> seconds</label>
+          <input id="poseRateSlider" type="range" min="0" max="3" step="0.1" value="0" class="w-full">
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>0 (unlimited)</span>
+            <span>3 seconds</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col items-center">
+      <video id="video" playsinline class="rounded-lg shadow mb-2 w-full max-w-md"></video>
+      <canvas id="output" class="rounded-lg shadow w-full max-w-md"></canvas>
+    </div>
+  </div>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('output');
+  const ctx = canvas.getContext('2d');
+  const wsUrlInput = document.getElementById('wsUrl');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const statusEl = document.getElementById('status');
+  const cameraSelect = document.getElementById('cameraSelect');
+  const zoomRange = document.getElementById('zoomRange');
+  const poseRateSlider = document.getElementById('poseRateSlider');
+  const rateValue = document.getElementById('rateValue');
+  const currentModeLabel = document.getElementById('currentModeLabel');
+  const loadingOpencv = document.getElementById('loadingOpencv');
+  var csrf = "{{ csrf_token }}";
+
+  let ws, camera;
+  let lastPoseSentTime = 0;
+  let currentMode = 'pose'; // 'pose' or 'draw'
+  let cvReady = false;
+
+  // OpenCV Initialization
+  var Module = {
+    onRuntimeInitialized: function() {
+      cvReady = true;
+      loadingOpencv.style.display = 'none';
+      console.log('OpenCV.js is ready');
+    }
+  };
+
+  // Load saved settings or defaults
+  const savedUrl = localStorage.getItem('wsUrl') || 'wss://a.com';
+  const savedCam = localStorage.getItem('cameraId');
+  const savedZoom = localStorage.getItem('zoom') || 1;
+  const savedPoseRate = localStorage.getItem('poseRate') || 0;
+  const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
+  wsUrlInput.value = savedUrl;
+  zoomRange.value = savedZoom;
+  poseRateSlider.value = savedPoseRate;
+  rateValue.textContent = savedPoseRate;
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'mt-2 text-sm font-medium ' + cls;
+  }
+
+  function connectWS() {
+    const url = wsUrlInput.value.trim();
+    if (!url) return;
+    localStorage.setItem('wsUrl', url);
+    setStatus('Connecting...', 'text-yellow-500');
+    ws = new WebSocket(url);
+    ws.onopen = () => { 
+      setStatus('Connected', 'text-green-600'); 
+      localStorage.setItem('autoReconnect', 'true'); 
+    };
+    ws.onclose = () => { 
+      setStatus('Disconnected', 'text-red-500'); 
+      if(localStorage.getItem('autoReconnect')==='true'){ 
+        setTimeout(connectWS,3000); 
+      } 
+    };
+    ws.onerror = () => { setStatus('Error', 'text-red-600'); };
+    ws.onmessage = ev => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'get_image' && msg.wall_id) {
+          sendImageToApi(msg.wall_id);
+        } else if (msg.mode) {
+          setMode(msg.mode);
+        }
+      } catch(e){ console.error(e); }
+    };
+  }
+
+  function setMode(mode) {
+    if (mode === 'draw' || mode === 'pose') {
+      currentMode = mode;
+      currentModeLabel.textContent = mode.toUpperCase();
+      console.log('Mode switched to:', mode);
+    }
+  }
+
+  function disconnectWS() {
+    localStorage.setItem('autoReconnect', 'false');
+    if(ws) { ws.close(); }
+  }
+
+  connectBtn.onclick = connectWS;
+  disconnectBtn.onclick = disconnectWS;
+
+  function sendPose(landmarks, width, height){
+    if(ws && ws.readyState === WebSocket.OPEN){
+      const maxRate = parseFloat(poseRateSlider.value);
+      const currentTime = Date.now();
+      
+      // If maxRate is 0, send immediately (unlimited)
+      if (maxRate === 0) {
+        ws.send(JSON.stringify({type:'pose',timestamp:currentTime/1000,width,height,landmarks}));
+        return;
+      }
+      
+      // Otherwise, check if enough time has passed
+      const timeSinceLastSend = currentTime - lastPoseSentTime;
+      const minInterval = maxRate * 1000; // Convert to milliseconds
+      
+      if (timeSinceLastSend >= minInterval) {
+        ws.send(JSON.stringify({type:'pose',timestamp:currentTime/1000,width,height,landmarks}));
+        lastPoseSentTime = currentTime;
+      }
+    }
+  }
+
+  function sendArUco(markers, width, height) {
+    if(ws && ws.readyState === WebSocket.OPEN){
+        const currentTime = Date.now();
+        ws.send(JSON.stringify({
+            type: 'pose', // Keep consistent with backend expectation but include aruco_markers
+            timestamp: currentTime / 1000,
+            width,
+            height,
+            landmarks: [], 
+            aruco_markers: markers
+        }));
+    }
+  }
+
+  async function sendImageToApi(wall_id) {
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      const formData = new FormData();
+      formData.append('wall_id', wall_id);
+      formData.append('image_data', dataUrl);
+
+      const response = await fetch('http://climb.net/api/upload-wall-image/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+                  "X-CSRFToken": csrf,
+                },
+      });
+
+      if (!response.ok) {
+        console.error('Image upload failed:', response.status, await response.text());
+      } else {
+        console.log('Image uploaded successfully for wall_id:', wall_id);
+      }
+    } catch (err) {
+      console.error('Error uploading image:', err);
+    }
+  }
+
+  async function startCamera(deviceId){
+    if(camera) { camera.stop(); }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId?{exact:deviceId}:undefined } });
+    video.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
+    const capabilities = track.getCapabilities();
+    if(capabilities.zoom){
+      zoomRange.min = capabilities.zoom.min;
+      zoomRange.max = capabilities.zoom.max;
+      zoomRange.step = capabilities.zoom.step || 0.1;
+      zoomRange.value = savedZoom;
+      zoomRange.oninput = () => {
+        track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+        localStorage.setItem('zoom', zoomRange.value);
+      };
+      track.applyConstraints({ advanced: [{ zoom: zoomRange.value }] });
+    }
+    localStorage.setItem('cameraId', deviceId || '');
+  }
+
+  async function loadCameras(){
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const vids = devices.filter(d=>d.kind==='videoinput');
+    cameraSelect.innerHTML = '';
+    vids.forEach(d=>{
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Camera ${cameraSelect.length+1}`;
+      cameraSelect.appendChild(opt);
+    });
+    if(savedCam && vids.some(v=>v.deviceId===savedCam)) cameraSelect.value = savedCam;
+    startCamera(cameraSelect.value);
+  }
+
+  cameraSelect.onchange = () => startCamera(cameraSelect.value);
+  
+  // Handle pose rate slider changes
+  poseRateSlider.oninput = () => {
+    const value = poseRateSlider.value;
+    rateValue.textContent = value;
+    localStorage.setItem('poseRate', value);
+  };
+
+  const pose = new Pose({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${f}`});
+  
+  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  pose.onResults(results => {
+    if (currentMode !== 'pose') return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+    if(results.poseLandmarks){
+      for(const lm of results.poseLandmarks){
+        ctx.beginPath();
+        ctx.arc(lm.x*canvas.width, lm.y*canvas.height, 3, 0, 2*Math.PI);
+        ctx.fillStyle = 'rgba(0,255,0,0.7)';
+        ctx.fill();
+      }
+      sendPose(results.poseLandmarks, canvas.width, canvas.height);
+    }
+  });
+
+  function processArUco() {
+    if (!cvReady || currentMode !== 'draw') return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+    try {
+        let detector;
+        let dictionary;
+        let corners = new cv.MatVector();
+        let ids = new cv.Mat();
+        let detectorParams = new cv.DetectorParameters();
+        
+        const selectedDict = document.getElementById('arucoDictSelect').value;
+        const dictName = `DICT_${selectedDict}`;
+        const dictConst = cv[dictName] || (cv.aruco ? cv.aruco[dictName] : null);
+
+        if (!dictConst) {
+            console.error(`ArUco dictionary ${dictName} not found in OpenCV.js`);
+            corners.delete(); ids.delete(); detectorParams.delete();
+            return;
+        }
+
+        // Check for common ArUco API locations
+        if (cv.detectMarkers) {
+            dictionary = cv.getPredefinedDictionary(dictConst);
+            detector = (gray, dict, corners, ids, params) => cv.detectMarkers(gray, dict, corners, ids, params);
+        } else if (cv.aruco && cv.aruco.detectMarkers) {
+            dictionary = cv.aruco.getPredefinedDictionary(dictConst);
+            detector = (gray, dict, corners, ids, params) => cv.aruco.detectMarkers(gray, dict, corners, ids, params);
+        } else {
+            console.error('ArUco detection functions NOT found in OpenCV.js.');
+            corners.delete(); ids.delete(); detectorParams.delete();
+            return;
+        }
+
+        let src = cv.imread(canvas);
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        
+        detector(gray, dictionary, corners, ids, detectorParams);
+        
+        let markerIds = [];
+        if (ids.rows > 0) {
+            for (let i = 0; i < ids.rows; ++i) {
+                markerIds.push(ids.data32S[i]);
+            }
+            console.log(`Detected markers: ${markerIds.join(', ')}`);
+        }
+
+        const markers = [];
+        if (markerIds.length > 0) {
+            for (let i = 0; i < markerIds.length; ++i) {
+                const id = markerIds[i];
+                const markerCorners = corners.get(i);
+                
+                let sumX = 0, sumY = 0;
+                for (let j = 0; j < 4; j++) {
+                    sumX += markerCorners.data32F[j * 2];
+                    sumY += markerCorners.data32F[j * 2 + 1];
+                }
+                const centerX = sumX / 4;
+                const centerY = sumY / 4;
+                const normX = centerX / canvas.width;
+                const normY = centerY / canvas.height;
+
+                markers.push({ id, x: normX, y: normY });
+
+                // Draw border around marker
+                ctx.beginPath();
+                ctx.moveTo(markerCorners.data32F[0], markerCorners.data32F[1]);
+                for (let j = 1; j < 4; j++) {
+                    ctx.lineTo(markerCorners.data32F[j * 2], markerCorners.data32F[j * 2 + 1]);
+                }
+                ctx.closePath();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#FF00FF'; // Magenta
+                ctx.stroke();
+
+                // Draw center point
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+
+                ctx.font = "20px Arial";
+                ctx.fillStyle = "white";
+                ctx.fillText(id, centerX + 15, centerY);
+            }
+            sendArUco(markers, canvas.width, canvas.height);
+        }
+
+        src.delete(); gray.delete(); corners.delete(); ids.delete();
+        detectorParams.delete();
+    } catch (e) {
+        console.error('ArUco detection error:', e);
+    }
+  }
+
+  const camUtils = new Camera(video, { 
+    onFrame: async () => { 
+        if (currentMode === 'pose') {
+            await pose.send({image: video}); 
+        } else if (currentMode === 'draw') {
+            processArUco();
+        }
+    }, 
+    width: 480, height: 360 
+  });
+  camUtils.start();
+
+  loadCameras();
+
+  document.querySelectorAll('input[name="view"]').forEach(r => {
+    r.onchange = () => {
+      const v = r.value;
+      video.style.display = (v==='both'||v==='video')?'block':'none';
+      canvas.style.display = (v==='both'||v==='pose')?'block':'none';
+    };
+  });
+
+  if(autoReconnect) connectWS();
+</script>
+
+
+{% endblock content %}
