@@ -17,6 +17,9 @@ from climber.models import Wall, WallCalibration, Route
 from climber.svg_utils import SVGParser, get_hold_centers
 from climber.calibration.calibration_utils import CalibrationUtils
 
+# Type alias for pre-computed path data
+PrecomputedPaths = Dict[str, tuple]  # path_id -> (matplotlib.path.Path, bbox)
+
 
 class TouchTracker:
     """Track touch durations with tolerance for dropped frames"""
@@ -274,8 +277,8 @@ class OutputWebSocketClient:
 def validate_pose_data(data):
     if not isinstance(data, dict):
         return False, "Data must be a dictionary"
-    if 'landmarks' not in data and 'aruco_markers' not in data:
-        return False, "Missing 'landmarks' or 'aruco_markers' array"
+    if 'landmarks' not in data and 'aruco_markers' not in data and 'mode' not in data:
+        return False, "Missing 'landmarks', 'aruco_markers', or 'mode' key"
     return True, "Valid"
 
 
@@ -401,29 +404,30 @@ def transform_to_svg_coordinates(position, calibration_utils, transform_matrix, 
         abs_y = position[1] * img_height
         
         transformed_pos = calibration_utils.transform_point_to_svg((abs_x, abs_y), transform_matrix)
-        logger.info(f"Transform (aruco): norm {position} -> abs {abs_x, abs_y} -> svg {transformed_pos}")
+        logger.debug(f"Transform (aruco): norm {position} -> abs {abs_x, abs_y} -> svg {transformed_pos}")
         
         return transformed_pos
 
 
-def check_hold_intersections(svg_parser, position, buttons=None):
+def check_hold_intersections(position, precomputed_paths=None, buttons=None):
     if position is None:
         return set(), set()
     touched_holds = set()
     touched_buttons = set()
     
-    # Check holds (paths)
-    for path_id, path_data in svg_parser.paths.items():
-        try:
-            if svg_parser.point_in_path((position[0], position[1]), path_data['d']):
-                touched_holds.add(path_id)
-        except Exception:
-            pass
+    # Check holds using pre-computed matplotlib Path objects with bbox fast rejection
+    if precomputed_paths:
+        point = (position[0], position[1])
+        for path_id, precomputed in precomputed_paths.items():
+            try:
+                if SVGParser.point_in_precomputed_path(point, precomputed):
+                    touched_holds.add(path_id)
+            except Exception:
+                pass
             
-    # Check buttons (rects)
+    # Check buttons (rects) - already fast, no change needed
     if buttons:
         for btn_id, btn_data in buttons.items():
-            # Simple point-in-rect check
             if (btn_data['x'] <= position[0] <= btn_data['x'] + btn_data['width'] and
                 btn_data['y'] <= position[1] <= btn_data['y'] + btn_data['height']):
                 touched_buttons.add(btn_id)
@@ -442,6 +446,7 @@ class InteractiveWallCommandSystem:
         
         self.hold_centers = {}
         self.last_debug_output_time = 0.0
+        self.precomputed_paths = {}  # Pre-computed matplotlib Path objects + bboxes
         
         self.wall = None
         self.calibration = None
@@ -500,9 +505,9 @@ class InteractiveWallCommandSystem:
             self.state.button_to_mode = {}
             class_to_mode = {
                 'button0': 'draw',
-                'button1': 'easy',
+                'button1': 'hard',
                 'button2': 'medium',
-                'button3': 'hard'
+                'button3': 'easy'
             }
             for btn_id, btn_data in self.buttons.items():
                 for cls in btn_data['classes']:
@@ -512,6 +517,9 @@ class InteractiveWallCommandSystem:
         
         # Calculate hold centers for debug purposes
         self.hold_centers = get_hold_centers(self.svg_parser)
+        
+        # Pre-compute matplotlib Path objects and bounding boxes for fast intersection checks
+        self.precomputed_paths = self.svg_parser.precompute_paths()
         
         self.calibration_utils = CalibrationUtils()
         self.transform_matrix = np.array(self.calibration.perspective_transform, dtype=np.float32)
@@ -609,6 +617,19 @@ class InteractiveWallCommandSystem:
             is_valid, _ = validate_pose_data(data)
             if not is_valid: return
             
+            # Handle manual mode switch from phone
+            if 'mode' in data and data.get('type') == 'change_mode':
+                new_mode = data['mode']
+                if new_mode in self.state.MODES:
+                    if self.state.mode != new_mode:
+                        self.state.mode = new_mode
+                        logger.info(f"Manual mode switch from phone: {new_mode}")
+                        if new_mode in ['easy', 'medium', 'hard']:
+                            self.state.available_routes = await self.fetch_routes_by_difficulty(new_mode)
+                            self.state.current_route_index = 0
+                        await self.send_system_state()
+                return
+
             timestamp = data.get('timestamp', time.time())
             img_width = data.get('width', 100)
             img_height = data.get('height', 100)
@@ -626,7 +647,7 @@ class InteractiveWallCommandSystem:
             for h in [left_hand, right_hand]:
                 svg_pos = transform_to_svg_coordinates(h, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                 if svg_pos:
-                    holds, buttons = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
+                    holds, buttons = check_hold_intersections(svg_pos, self.precomputed_paths, self.buttons)
                     touched_holds_hand.update(holds)
                     touched_holds_hand.update(buttons) # Include buttons in hand touches
             
@@ -640,7 +661,7 @@ class InteractiveWallCommandSystem:
                 for pos in aruco_positions:
                     svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                     if svg_pos:
-                        holds, _ = check_hold_intersections(self.svg_parser, svg_pos, self.buttons)
+                        holds, _ = check_hold_intersections(svg_pos, self.precomputed_paths, self.buttons)
                         touched_holds_aruco.update(holds)
                     
             await self._handle_aruco_touches(touched_holds_aruco, timestamp)
@@ -757,9 +778,9 @@ class InteractiveWallCommandSystem:
         """Background task to ensure state is sent at least every second"""
         while self.running:
             now = time.time()
-            if now - self.last_state_send_time >= 1.0:
+            if now - self.last_state_send_time >= 2.0:
                 await self.send_system_state()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
     async def run(self):
         if not await self.setup():

@@ -225,6 +225,57 @@ class SVGParser:
             logger.error(f"Error converting path to polygon: {e}")
             return np.array([])
     
+    def precompute_paths(self) -> Dict[str, Tuple[Any, Tuple[float, float, float, float]]]:
+        """
+        Pre-compute matplotlib Path objects and bounding boxes for all hold paths.
+        Call once at setup to avoid re-parsing SVG path strings on every frame.
+        
+        Returns:
+            Dict mapping path_id -> (matplotlib.path.Path, (xmin, ymin, xmax, ymax))
+        """
+        import matplotlib.path as mpath
+        
+        precomputed = {}
+        for path_id, path_data in self.paths.items():
+            try:
+                vertices = self._parse_path_to_matplotlib_format(path_data['d'])
+                if len(vertices) >= 3:
+                    mp = mpath.Path(vertices)
+                    extents = mp.get_extents()
+                    bbox = (extents.x0, extents.y0, extents.x1, extents.y1)
+                    precomputed[path_id] = (mp, bbox)
+            except Exception as e:
+                logger.warning(f"Failed to precompute path {path_id}: {e}")
+        
+        logger.info(f"Pre-computed {len(precomputed)} matplotlib Path objects")
+        return precomputed
+
+    @staticmethod
+    def point_in_precomputed_path(point: Tuple[float, float],
+                                   precomputed_path: Tuple[Any, Tuple[float, float, float, float]],
+                                   bbox_margin: float = 5.0) -> bool:
+        """
+        Fast point-in-path check using pre-computed matplotlib Path + bounding box.
+        
+        Args:
+            point: (x, y) to test
+            precomputed_path: (matplotlib.path.Path, (xmin, ymin, xmax, ymax))
+            bbox_margin: Extra margin around bounding box for early rejection
+            
+        Returns:
+            True if point is inside the path
+        """
+        mp, (xmin, ymin, xmax, ymax) = precomputed_path
+        x, y = point
+        
+        # Fast bounding box rejection
+        if x < xmin - bbox_margin or x > xmax + bbox_margin:
+            return False
+        if y < ymin - bbox_margin or y > ymax + bbox_margin:
+            return False
+        
+        return mp.contains_point(point)
+
     def point_in_path(self, point: Tuple[float, float], path_d: str) -> bool:
         """
         Check if a point is inside a path
