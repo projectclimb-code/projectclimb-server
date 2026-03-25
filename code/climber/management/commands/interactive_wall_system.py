@@ -298,7 +298,7 @@ def calculate_extended_hand_landmarks(landmarks, extension_percent=1.0):
             if idx < len(landmarks):
                 l = landmarks[idx]
                 # Check visibility if present; some formats might not have it
-                if l.get('visibility', 1.0) > 0.5:
+                if l.get('visibility', 1.0) > 0.1:
                     available_palm.append(l)
         
         if available_palm:
@@ -310,7 +310,7 @@ def calculate_extended_hand_landmarks(landmarks, extension_percent=1.0):
             elbow = None
             if elbow_idx < len(landmarks):
                 e = landmarks[elbow_idx]
-                if e.get('visibility', 1.0) > 0.5:
+                if e.get('visibility', 1.0) > 0.1:
                     elbow = e
             
             if elbow:
@@ -328,8 +328,8 @@ def calculate_extended_hand_landmarks(landmarks, extension_percent=1.0):
             # Palm size estimation
             palm_size = 0.05 # Default fallback
             # Try to get distance between pinky and index if both are available
-            p_landmark = landmarks[pinky_idx] if pinky_idx < len(landmarks) and landmarks[pinky_idx].get('visibility', 1.0) > 0.5 else None
-            i_landmark = landmarks[index_idx] if index_idx < len(landmarks) and landmarks[index_idx].get('visibility', 1.0) > 0.5 else None
+            p_landmark = landmarks[pinky_idx] if pinky_idx < len(landmarks) and landmarks[pinky_idx].get('visibility', 1.0) > 0.1 else None
+            i_landmark = landmarks[index_idx] if index_idx < len(landmarks) and landmarks[index_idx].get('visibility', 1.0) > 0.1 else None
             
             if p_landmark and i_landmark:
                 palm_size = np.sqrt((p_landmark['x'] - i_landmark['x'])**2 + (p_landmark['y'] - i_landmark['y'])**2)
@@ -358,18 +358,7 @@ def extract_hand_positions(landmarks):
     ext_left, elbow_left = hand_data[0]
     ext_right, elbow_right = hand_data[1]
     
-    # Fallback logic if extension fails but basic landmarks exist
-    if not ext_left and len(landmarks) > 19:
-        left_wrist = landmarks[15]
-        left_index = landmarks[19]
-        if left_wrist['visibility'] > 0.5 and left_index['visibility'] > 0.5:
-            ext_left = ( (left_wrist['x'] + left_index['x'])/2, (left_wrist['y'] + left_index['y'])/2 )
-            
-    if not ext_right and len(landmarks) > 20:
-        right_wrist = landmarks[16]
-        right_index = landmarks[20]
-        if right_wrist['visibility'] > 0.5 and right_index['visibility'] > 0.5:
-            ext_right = ( (right_wrist['x'] + right_index['x'])/2, (right_wrist['y'] + right_index['y'])/2 )
+    # Fallback logic removed, rely entirely on robust calculate_extended_hand_landmarks
             
     # Also extract elbows directly if not already found
     if not elbow_left and len(landmarks) > 13:
