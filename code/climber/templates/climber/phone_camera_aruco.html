@@ -60,11 +60,15 @@
 
     <div class="bg-white shadow rounded-lg p-4 mb-6">
       <h2 class="text-lg font-semibold mb-2">Display Options</h2>
-      <div class="flex flex-wrap gap-4">
+      <div class="flex flex-wrap gap-4 items-center">
         <label><input type="radio" name="view" value="both" checked class="mr-1">Both</label>
         <label><input type="radio" name="view" value="video" class="mr-1">Video only</label>
         <label><input type="radio" name="view" value="pose" class="mr-1">Pose only</label>
         <label><input type="radio" name="view" value="none" class="mr-1">None</label>
+        <div class="border-l border-gray-300 pl-4 ml-2 flex gap-2">
+          <button id="fsVideoBtn" class="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-1 rounded">Fullscreen Camera</button>
+          <button id="fsOutputBtn" class="bg-gray-200 hover:bg-gray-300 text-sm px-3 py-1 rounded">Fullscreen Output</button>
+        </div>
       </div>
     </div>
 
@@ -426,6 +430,31 @@
       canvas.style.display = (v==='both'||v==='pose')?'block':'none';
     };
   });
+
+  function toggleFullscreen(elem) {
+    if (!document.fullscreenElement) {
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) { /* Safari */
+        elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) { /* IE11 */
+        elem.msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) { /* Safari */
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) { /* IE11 */
+        document.msExitFullscreen();
+      }
+    }
+  }
+
+  document.getElementById('fsVideoBtn').onclick = () => toggleFullscreen(video);
+  document.getElementById('fsOutputBtn').onclick = () => toggleFullscreen(canvas);
+  video.ondblclick = () => toggleFullscreen(video);
+  canvas.ondblclick = () => toggleFullscreen(canvas);
 
   if(autoReconnect) connectWS();
 </script>
