@@ -13,7 +13,6 @@
   <title>Pose Stream</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
   <script>
     var module = { exports: {} };
     function require(name) {
@@ -100,7 +99,7 @@
     </div>
 
     <div class="flex flex-col items-center">
-      <video id="video" playsinline class="rounded-lg shadow mb-2 w-full max-w-md"></video>
+      <video id="video" playsinline autoplay muted class="rounded-lg shadow mb-2 w-full max-w-md"></video>
       <canvas id="output" class="rounded-lg shadow w-full max-w-md"></canvas>
     </div>
   </div>
@@ -120,7 +119,7 @@
   const currentModeLabel = document.getElementById('currentModeLabel');
   var csrf = "{{ csrf_token }}";
 
-  let ws, camera;
+  let ws;
   let lastPoseSentTime = 0;
   let currentMode = 'pose'; // 'pose' or 'draw'
   
@@ -262,9 +261,24 @@
   }
 
   async function startCamera(deviceId){
-    if(camera) { camera.stop(); }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId?{exact:deviceId}:undefined } });
+    if(video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+            deviceId: deviceId?{exact:deviceId}:undefined,
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+        } 
+    });
     video.srcObject = stream;
+    
+    // Start the ticker when video starts playing
+    video.onloadedmetadata = () => {
+        video.play();
+        workerTicker.postMessage('start');
+    };
+
     const track = stream.getVideoTracks()[0];
     const capabilities = track.getCapabilities();
     if(capabilities.zoom){
@@ -310,8 +324,14 @@
   pose.onResults(results => {
     if (currentMode !== 'pose') return;
     
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Ensure canvas size matches video
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+    }
+    
+    if (canvas.width === 0) return;
+
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
     if(results.poseLandmarks){
@@ -324,6 +344,50 @@
       sendPose(results.poseLandmarks, canvas.width, canvas.height);
     }
   });
+
+  // Web Worker for background processing ticker
+  const workerCode = `
+    let interval = 40; // ~25 fps
+    let timer = null;
+    onmessage = function(e) {
+      if (e.data === 'start') {
+        if (timer) clearInterval(timer);
+        timer = setInterval(() => postMessage('tick'), interval);
+      } else if (e.data === 'stop') {
+        clearInterval(timer);
+        timer = null;
+      } else if (typeof e.data === 'number') {
+        interval = e.data;
+        if (timer) {
+          clearInterval(timer);
+          timer = setInterval(() => postMessage('tick'), interval);
+        }
+      }
+    };
+  `;
+  const blob = new Blob([workerCode], {type: 'application/javascript'});
+  const workerTicker = new Worker(URL.createObjectURL(blob));
+
+  let isProcessing = false;
+  async function processFrame() {
+    if (isProcessing) return;
+    if (video.paused || video.ended || video.readyState < 2) return;
+    
+    isProcessing = true;
+    try {
+        if (currentMode === 'pose') {
+            await pose.send({image: video});
+        } else if (currentMode === 'draw') {
+            processArUco();
+        }
+    } catch (e) {
+        console.error('Frame processing error:', e);
+    } finally {
+        isProcessing = false;
+    }
+  }
+
+  workerTicker.onmessage = processFrame;
 
   function processArUco() {
     if (currentMode !== 'draw') return;
@@ -387,18 +451,6 @@
         console.error('ArUco detection error:', e);
     }
   }
-
-  const camUtils = new Camera(video, { 
-    onFrame: async () => { 
-        if (currentMode === 'pose') {
-            await pose.send({image: video}); 
-        } else if (currentMode === 'draw') {
-            processArUco();
-        }
-    }, 
-    width: 480, height: 360 
-  });
-  camUtils.start();
 
   loadCameras();
 
