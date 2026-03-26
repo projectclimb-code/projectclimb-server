@@ -277,8 +277,8 @@ class OutputWebSocketClient:
 def validate_pose_data(data):
     if not isinstance(data, dict):
         return False, "Data must be a dictionary"
-    if 'landmarks' not in data and 'aruco_markers' not in data and 'mode' not in data:
-        return False, "Missing 'landmarks', 'aruco_markers', or 'mode' key"
+    if 'landmarks' not in data and 'aruco_markers' not in data and 'light_points' not in data and 'mode' not in data:
+        return False, "Missing 'landmarks', 'aruco_markers', 'light_points', or 'mode' key"
     return True, "Valid"
 
 
@@ -372,18 +372,31 @@ def extract_hand_positions(landmarks):
     return ext_left, ext_right, elbow_left, elbow_right
 
 
-def extract_aruco_positions(data):
-    aruco_positions = []
+def extract_detection_positions(data):
+    """Extract positions from both ArUco markers and Light detection points"""
+    positions = []
+    
+    # 1. ArUco markers
     markers = data.get('aruco_markers', [])
     for marker in markers:
         try:
             if 'x' in marker and 'y' in marker:
-                aruco_positions.append((marker['x'], marker['y']))
+                positions.append((marker['x'], marker['y']))
             elif 'center' in marker:
-                aruco_positions.append((marker['center']['x'], marker['center']['y']))
+                positions.append((marker['center']['x'], marker['center']['y']))
         except Exception:
             pass
-    return aruco_positions
+            
+    # 2. Light points (Laser pointers / Bright lights)
+    light_points = data.get('light_points', [])
+    for pt in light_points:
+        try:
+            if 'x' in pt and 'y' in pt:
+                positions.append((pt['x'], pt['y']))
+        except Exception:
+            pass
+            
+    return positions
 
 
 def transform_to_svg_coordinates(position, calibration_utils, transform_matrix, svg_size, img_width, img_height, calibration_type='aruco'):
@@ -460,9 +473,9 @@ class InteractiveWallCommandSystem:
         
         self.buttons = {} # btn_id -> btn_data from SVG
         
-        # We track hands fast (1.0s tolerance) to trigger buttons, ArUco slow (0.5s tolerance) to lock in holds
+        # We track hands fast (1.0s tolerance) to trigger buttons, Detection slow (0.5s tolerance) to lock in holds
         self.hand_tracker = TouchTracker(touch_duration=2.0, lost_tolerance=1.0, multi_trigger=True)
-        self.aruco_tracker = TouchTracker(touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False)
+        self.detection_tracker = TouchTracker(touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False)
         
         self.last_palm_l_img = None
         self.last_palm_r_img = None
@@ -584,17 +597,17 @@ class InteractiveWallCommandSystem:
             
         await self.send_system_state()
             
-    async def _handle_aruco_touches(self, touched_holds: Set[str], timestamp: float):
-        """Process ArUco marker touches for route drawing"""
+    async def _handle_detection_touches(self, touched_holds: Set[str], timestamp: float):
+        """Process ArUco or Light detection touches for route drawing"""
         if self.state.mode != 'draw':
-            self.aruco_tracker.clear_all()
+            self.detection_tracker.clear_all()
             return
             
         # Filter out control buttons from being selectable
         selectable_holds = {h for h in touched_holds if h not in self.state.control_buttons}
-        self.aruco_tracker.update_touches(selectable_holds, timestamp)
+        self.detection_tracker.update_touches(selectable_holds, timestamp)
         
-        ready = self.aruco_tracker.get_ready_holds(timestamp)
+        ready = self.detection_tracker.get_ready_holds(timestamp)
         state_changed = False
         
         for hold_data in ready:
@@ -656,17 +669,17 @@ class InteractiveWallCommandSystem:
             self.state.current_touched_holds = touched_holds_hand
             await self._handle_hand_touches(touched_holds_hand, timestamp)
             
-            # 2. Process ArUco (only in draw mode, to create new temporary route)
-            touched_holds_aruco = set()
+            # 2. Process Detection Points (ArUco or Light) in draw mode
+            touched_holds_detection = set()
             if self.state.mode == 'draw':
-                aruco_positions = extract_aruco_positions(data)
-                for pos in aruco_positions:
+                detection_positions = extract_detection_positions(data)
+                for pos in detection_positions:
                     svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
                     if svg_pos:
                         holds, _ = check_hold_intersections(svg_pos, self.precomputed_paths, self.buttons)
-                        touched_holds_aruco.update(holds)
+                        touched_holds_detection.update(holds)
                     
-            await self._handle_aruco_touches(touched_holds_aruco, timestamp)
+            await self._handle_detection_touches(touched_holds_detection, timestamp)
             
             # 3. Process Loop Iteration
             await self._process_looping(timestamp)
