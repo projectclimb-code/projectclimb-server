@@ -160,8 +160,8 @@
                         </g>
                         
                         <!-- System Feedback Elbows -->
-                        <circle id="sys_elbow_l" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
-                        <circle id="sys_elbow_r" r="6" class="fill-blue-500 opacity-0 transition-opacity duration-300 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_l" r="6" class="fill-blue-500 opacity-0 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
+                        <circle id="sys_elbow_r" r="6" class="fill-blue-500 opacity-0 pointer-events-none stroke-white stroke-1" cx="0" cy="0"></circle>
                     </g>
                 </svg>
                 
@@ -784,7 +784,17 @@
         {% endif %}
     });
 
-    // Send data continuously at least every second to keep backend trackers alive
-    setInterval(sendPose, 1000);
+    // Send pose continuously at ~30fps using requestAnimationFrame
+    let lastPoseSent = 0;
+    const POSE_INTERVAL_MS = 33; // ~30fps
+
+    function poseLoop(timestamp) {
+        if (timestamp - lastPoseSent >= POSE_INTERVAL_MS) {
+            sendPose();
+            lastPoseSent = timestamp;
+        }
+        requestAnimationFrame(poseLoop);
+    }
+    requestAnimationFrame(poseLoop);
 </script>
 {% endblock %}

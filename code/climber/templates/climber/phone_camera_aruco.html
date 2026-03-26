@@ -347,7 +347,7 @@
 
   // Web Worker for background processing ticker
   const workerCode = `
-    let interval = 40; // ~25 fps
+    let interval = 100; // 10 fps for stability and background
     let timer = null;
     onmessage = function(e) {
       if (e.data === 'start') {
@@ -369,11 +369,42 @@
   const workerTicker = new Worker(URL.createObjectURL(blob));
 
   let isProcessing = false;
+  let lastProcessTime = 0;
+  const MIN_PROCESS_INTERVAL = 100; // Max 10 fps to save resources
+
   async function processFrame() {
     if (isProcessing) return;
+    
+    const now = Date.now();
+    if (now - lastProcessTime < MIN_PROCESS_INTERVAL) return;
+
     if (video.paused || video.ended || video.readyState < 2) return;
     
+    // Cap resolution to 640x480 to avoid memory/CPU stress (SIGILL errors)
+    const maxWidth = 640;
+    const maxHeight = 480;
+    let targetWidth = video.videoWidth;
+    let targetHeight = video.videoHeight;
+    
+    if (targetWidth > maxWidth) {
+        targetWidth = maxWidth;
+        targetHeight = Math.floor(video.videoHeight * (maxWidth / video.videoWidth));
+    }
+    if (targetHeight > maxHeight) {
+        targetHeight = maxHeight;
+        targetWidth = Math.floor(video.videoWidth * (maxHeight / video.videoHeight));
+    }
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+    }
+    
+    if (canvas.width === 0) return;
+
     isProcessing = true;
+    lastProcessTime = now;
+    
     try {
         if (currentMode === 'pose') {
             await pose.send({image: video});
@@ -388,12 +419,22 @@
   }
 
   workerTicker.onmessage = processFrame;
+  
+  // Foreground loop using rAF for extra responsiveness when visible
+  function foregroundLoop() {
+      if (document.visibilityState === 'visible') {
+          processFrame();
+      }
+      requestAnimationFrame(foregroundLoop);
+  }
+  requestAnimationFrame(foregroundLoop);
 
   function processArUco() {
     if (currentMode !== 'draw') return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Use current canvas (already capped/resided in processFrame)
+    if (canvas.width === 0) return;
+
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
