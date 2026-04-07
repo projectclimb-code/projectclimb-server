@@ -16,7 +16,7 @@ from .models import Group, AppUser, Venue, Wall, Hold, Route, Session, SessionRe
 from django.contrib.auth.models import User
 from django.conf import settings
 
-from .tasks import send_fake_session_data_task, websocket_pose_session_tracker_task
+from .tasks import send_fake_session_data_task, websocket_pose_session_tracker_task, interactive_wall_system_task
 
 from revproxy.views import ProxyView
 
@@ -893,6 +893,59 @@ def trigger_websocket_tracker_task(request):
         return JsonResponse({
             'status': 'success',
             'message': f'WebSocket pose session tracker task started successfully with ID: {task.id}',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+#@login_required
+@csrf_exempt
+@require_POST
+def trigger_interactive_wall_task(request):
+    """Trigger the interactive wall system task via Celery."""
+    try:
+        # Get parameters from request
+        wall_id = request.POST.get('wall_id')
+        input_websocket_url = request.POST.get('input_websocket_url')
+        output_websocket_url = request.POST.get('output_websocket_url')
+        loop_time = request.POST.get('loop_time')
+        debug = request.POST.get('debug') == 'on'
+        debug_proximity = request.POST.get('debug_proximity') == 'on'
+        
+        # Convert parameters to appropriate types
+        task_kwargs = {}
+        if wall_id:
+            task_kwargs['wall_id'] = int(wall_id)
+        else:
+            # Default to first wall if not provided
+            default_wall = Wall.objects.first()
+            if default_wall:
+                task_kwargs['wall_id'] = default_wall.id
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No walls found. Please create a wall first.'}, status=400)
+                
+        if input_websocket_url:
+            task_kwargs['input_websocket_url'] = input_websocket_url
+        if output_websocket_url:
+            task_kwargs['output_websocket_url'] = output_websocket_url
+        if loop_time:
+            task_kwargs['loop_time'] = float(loop_time)
+        if debug:
+            task_kwargs['debug'] = debug
+        if debug_proximity:
+            task_kwargs['debug_proximity'] = debug_proximity
+            
+        # Trigger Celery task
+        task = interactive_wall_system_task.delay(**task_kwargs)
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Interactive Wall System task started successfully with ID: {task.id}',
             'task_id': task.id
         })
         

@@ -217,6 +217,7 @@ def websocket_pose_session_tracker_task(self, wall_id=1, input_websocket_url="ws
         # Import here to avoid circular imports
         from loguru import logger
         from climber.management.commands.websocket_pose_session_tracker import WebSocketPoseSessionTracker
+        from climber.management.commands.interactive_wall_system import InteractiveWallCommandSystem
         import json
         
         # Create task record in database
@@ -449,4 +450,87 @@ def stop_celery_task(self, task_id):
     except Exception as e:
         error_msg = f'Failed to stop task {task_id}: {e}'
         logger.error(error_msg)
+        return {'status': 'error', 'message': error_msg}
+
+
+@shared_task(bind=True)
+def interactive_wall_system_task(self, wall_id, input_websocket_url=None, output_websocket_url=None, 
+                                loop_time=5.0, debug=False, debug_proximity=False):
+    """
+    Celery task to run the Interactive Wall System (Draw/Easy/Medium/Hard mode manager).
+    
+    Args:
+        wall_id: ID of wall to use
+        input_websocket_url: WebSocket URL for receiving pose data
+        output_websocket_url: WebSocket URL for sending state updates
+        loop_time: Seconds interval for difficulty route looping
+        debug: Enable debug output
+        debug_proximity: Debug output for closest hold/button distances
+    """
+    try:
+        import asyncio
+        from loguru import logger
+        from climber.management.commands.interactive_wall_system import InteractiveWallCommandSystem
+        from django.conf import settings
+        from climber.models import CeleryTask
+        
+        # Use defaults from settings if not provided
+        if not input_websocket_url:
+            input_websocket_url = settings.WS_POSE_URL
+        if not output_websocket_url:
+            output_websocket_url = settings.WS_HOLDS_URL
+            
+        # Create task record in database
+        try:
+            CeleryTask.objects.update_or_create(
+                task_id=self.request.id,
+                defaults={
+                    'task_name': 'interactive_wall_system_task',
+                    'status': 'PENDING'
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to create task record: {e}")
+            
+        # Update task status
+        self.update_state(state='PROGRESS', meta={'status': 'Initializing Interactive Wall System...'})
+        
+        # Create system
+        system = InteractiveWallCommandSystem(
+            wall_id=wall_id,
+            input_websocket_url=input_websocket_url,
+            output_websocket_url=output_websocket_url,
+            loop_time=loop_time,
+            debug=debug,
+            debug_proximity=debug_proximity
+        )
+        
+        # Update task status in database
+        try:
+            CeleryTask.objects.filter(task_id=self.request.id).update(status='PROGRESS')
+        except Exception as e:
+            logger.error(f"Failed to update task status: {e}")
+            
+        # Run the async system
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            # Run the system
+            loop.run_until_complete(system.run())
+            return {'status': 'success', 'message': 'Interactive Wall System stopped.'}
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        error_msg = f'Interactive Wall System task failed: {e}'
+        from loguru import logger
+        logger.error(error_msg)
+        
+        # Update task status in database
+        if hasattr(self, 'request') and self.request:
+            try:
+                CeleryTask.objects.filter(task_id=self.request.id).update(status='FAILURE')
+            except Exception as e:
+                logger.error(f"Failed to update task status: {e}")
+                
         return {'status': 'error', 'message': error_msg}

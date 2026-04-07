@@ -2,546 +2,528 @@
 {% load tailwind_tags %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold text-gray-900 mb-8">Task Management</h1>
+<div class="min-h-screen bg-[#0a0a0c] text-slate-200 font-sans pb-20">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
         
-        <!-- Running Tasks Section -->
-        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Running Tasks</h2>
-            <p class="text-gray-600 mb-6">
-                Currently running background tasks. Click "Refresh Status" to update their status.
-            </p>
-            
-            <div class="flex justify-between items-start mb-4">
-                <div class="flex-1">
-                    <h3 class="text-lg font-medium text-gray-800 mb-2">Running Tasks</h3>
-                    <p class="text-sm text-gray-600">
-                        Currently running background tasks. Click "Refresh Status" to update their status.
-                    </p>
-                </div>
-                <div class="flex space-x-2">
-                    <button id="reset-holds"
-                            class="px-4 py-2 bg-orange-600 text-white font-medium rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2">
-                        Reset holds
-                    </button>
-                    <button id="kill-all-tasks-top"
-                            class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                        Kill All Tasks
-                    </button>
-                    <button id="refresh-running-tasks"
-                            class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                        Refresh Status
-                    </button>
-                </div>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at 50% 0%, #1a1a2e 0%, #0a0a0c 100%);
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px border rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .btn-premium {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-premium:hover {
+            filter: brightness(1.1);
+            transform: scale(1.02);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .status-pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        input, select, textarea {
+            background: rgba(0, 0, 0, 0.2) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+        }
+
+        input:focus, select:focus {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+            outline: none !important;
+        }
+
+        .task-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* Tabs styling */
+        .tab-btn {
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            border-bottom-color: #6366f1;
+            color: #818cf8;
+        }
+    </style>
+
+    <div class="container mx-auto px-6 py-12">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+            <div>
+                <h1 class="text-4xl font-bold tracking-tight mb-2">Task <span class="gradient-text">Control Center</span></h1>
+                <p class="text-slate-400 text-lg">Manage background services and interactive system processes.</p>
             </div>
-            
-            <div id="running-tasks" class="space-y-4">
-                <div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>
-            </div>
-        </div>
-        
-        <!-- Fake Session Data Task Section (Hidden) -->
-        <!-- <div class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Send Fake Session Data</h2>
-            <p class="text-gray-600 mb-6">
-                This task sends fake climbing session data to WebSocket for testing purposes.
-                The task runs in the background using Celery.
-            </p>
-            
-            <form id="fake-session-form" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="session_id" class="block text-sm font-medium text-gray-700 mb-1">
-                            Session ID (optional)
-                        </label>
-                        <input type="text" id="session_id" name="session_id" 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Leave empty to create a new session">
-                    </div>
-                    
-                    <div>
-                        <label for="duration" class="block text-sm font-medium text-gray-700 mb-1">
-                            Duration (seconds)
-                        </label>
-                        <input type="number" id="duration" name="duration" value="60" min="10" max="300"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="ws_url" class="block text-sm font-medium text-gray-700 mb-1">
-                            WebSocket URL
-                        </label>
-                        <input type="text" id="ws_url" name="ws_url" 
-                               value="ws://localhost:8000/ws/session-live/"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    
-                    <div class="flex items-center pt-6">
-                        <input type="checkbox" id="create_session" name="create_session" 
-                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                        <label for="create_session" class="ml-2 block text-sm text-gray-900">
-                            Create new session
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="flex justify-end">
-                    <button type="submit" 
-                            class="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                        Start Task
-                    </button>
-                </div>
-            </form>
-        </div> -->
-        
-        <!-- WebSocket Pose Session Tracker Task Section -->
-        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">WebSocket Pose Session Tracker</h2>
-            <p class="text-gray-600 mb-6">
-                This task connects to an input WebSocket to receive MediaPipe pose data, transforms the landmarks using wall calibration,
-                detects hold touches based on hand proximity to SVG paths, and outputs session data to an output WebSocket.
-                The task runs in the background using Celery with the specified default values.
-            </p>
-            
-            <div class="bg-gray-50 p-4 rounded-md mb-6">
-                <h3 class="text-lg font-medium text-gray-800 mb-2">Default Configuration:</h3>
-                <ul class="text-sm text-gray-600 space-y-1">
-                    <li><strong>Wall ID:</strong> 1</li>
-                    <li><strong>Input WebSocket:</strong> ws://192.168.88.2:8011/ws/pose/</li>
-                    <li><strong>Output WebSocket:</strong> ws://192.168.88.2:8011/ws/holds/</li>
-                    <li><strong>Proximity Threshold:</strong> 300.0 pixels</li>
-                    <li><strong>Touch Duration:</strong> 0.5 seconds</li>
-                    <li><strong>Reconnect Delay:</strong> 0.5 seconds</li>
-                    <li><strong>Route ID:</strong> 99</li>
-                </ul>
-            </div>
-            
-            <form id="websocket-tracker-form" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="tracker_wall_id" class="block text-sm font-medium text-gray-700 mb-1">
-                            Wall (optional)
-                        </label>
-                        <select id="tracker_wall_id" name="wall_id"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select a wall (default: 1)</option>
-                            {% for wall in walls %}
-                                <option value="{{ wall.id }}">{{ wall.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label for="tracker_route_id" class="block text-sm font-medium text-gray-700 mb-1">
-                            Route (optional)
-                        </label>
-                        <select id="tracker_route_id" name="route_id"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Select a route (default: 99)</option>
-                            {% for route in routes %}
-                                <option value="{{ route.id }}">{{ route.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="tracker_input_ws" class="block text-sm font-medium text-gray-700 mb-1">
-                            Input WebSocket URL (optional)
-                        </label>
-                        <input type="text" id="tracker_input_ws" name="input_websocket_url"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Default: ws://192.168.88.2:8011/ws/pose/">
-                    </div>
-                    
-                    <div>
-                        <label for="tracker_output_ws" class="block text-sm font-medium text-gray-700 mb-1">
-                            Output WebSocket URL (optional)
-                        </label>
-                        <input type="text" id="tracker_output_ws" name="output_websocket_url"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Default: ws://192.168.88.2:8011/ws/holds/">
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label for="tracker_proximity" class="block text-sm font-medium text-gray-700 mb-1">
-                            Proximity Threshold (optional)
-                        </label>
-                        <input type="number" id="tracker_proximity" name="proximity_threshold"
-                               step="0.1" value="300.0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Default: 300.0">
-                    </div>
-                    
-                    <div>
-                        <label for="tracker_touch_duration" class="block text-sm font-medium text-gray-700 mb-1">
-                            Touch Duration (seconds, optional)
-                        </label>
-                        <input type="number" id="tracker_touch_duration" name="touch_duration"
-                               step="0.1" value="0.5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Default: 0.5">
-                    </div>
-                    
-                    <div>
-                        <label for="tracker_reconnect_delay" class="block text-sm font-medium text-gray-700 mb-1">
-                            Reconnect Delay (seconds, optional)
-                        </label>
-                        <input type="number" id="tracker_reconnect_delay" name="reconnect_delay"
-                               step="0.1" value="0.5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Default: 0.5">
-                    </div>
-                </div>
-                
-                <div class="flex items-center">
-                    <input type="checkbox" id="tracker_debug" name="debug"
-                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                    <label for="tracker_debug" class="ml-2 block text-sm text-gray-900">
-                        Enable debug output
-                    </label>
-                </div>
-                
-                <div class="flex justify-end">
-                    <button type="submit"
-                            class="px-6 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
-                        Start WebSocket Tracker
-                    </button>
-                </div>
-            </form>
-        </div>
-        
-        <!-- Task Status Section -->
-        <div id="task-status" class="bg-white shadow-md rounded-lg p-6 hidden">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Task Status</h2>
-            
-            <div class="space-y-3">
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Task ID:</span>
-                    <span id="status-task-id" class="text-gray-600"></span>
-                </div>
-                
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Status:</span>
-                    <span id="status-status" class="text-gray-600"></span>
-                </div>
-                
-                <div class="flex justify-between">
-                    <span class="font-medium text-gray-700">Message:</span>
-                    <span id="status-message" class="text-gray-600"></span>
-                </div>
-                
-                <div id="progress-container" class="hidden">
-                    <div class="flex justify-between mb-1">
-                        <span class="font-medium text-gray-700">Progress:</span>
-                        <span id="progress-text" class="text-gray-600"></span>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5">
-                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="mt-6 flex justify-end space-x-3">
-                <button id="kill-all-tasks"
-                        class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                    Kill All Tasks
+            <div class="flex gap-3">
+                <button id="reset-holds" class="btn-secondary px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 hover:bg-white/20">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Reset Holds
                 </button>
-                <button id="refresh-status"
-                        class="px-4 py-2 bg-gray-600 text-white font-medium rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                    Refresh Status
-                </button>
-                <button id="clear-status"
-                        class="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                    Clear
+                <button id="kill-all-tasks-top" class="btn-danger px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 text-white shadow-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Kill All Services
                 </button>
             </div>
         </div>
-        
-        <!-- Instructions Section -->
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-8">
-            <div class="flex">
-                <div class="ml-3">
-                    <p class="text-sm text-blue-700">
-                        <strong>Note:</strong> Make sure Celery worker is running for tasks to execute.
-                        You can start it with: <code class="bg-blue-100 px-1 py-0.5 rounded">celery -A app worker -l info</code>
-                    </p>
+
+        <!-- Dashboard Stats & Active Tasks -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+            <!-- Stats -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="glass-card rounded-3xl p-8 h-full flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-slate-400 font-medium mb-4 uppercase tracking-widest text-xs">System Status</h3>
+                        <div class="flex items-center gap-4 mb-6">
+                            <div class="w-3 h-3 bg-green-500 rounded-full status-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+                            <span class="text-2xl font-semibold">Scheduler Active</span>
+                        </div>
+                    </div>
+                    <div id="quick-stats" class="grid grid-cols-2 gap-4">
+                        <div class="bg-black/20 rounded-2xl p-4">
+                            <span id="running-count" class="text-3xl font-bold block">0</span>
+                            <span class="text-slate-500 text-sm">Active Tasks</span>
+                        </div>
+                        <div class="bg-black/20 rounded-2xl p-4">
+                            <span id="uptime" class="text-3xl font-bold block">--</span>
+                            <span class="text-slate-500 text-sm">Max Uptime</span>
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <!-- Active Tasks List -->
+            <div class="lg:col-span-2">
+                <div class="glass-card rounded-3xl p-8 h-full">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-semibold">Active Services</h2>
+                        <button id="refresh-running-tasks" class="text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors">
+                            Refresh Monitor
+                        </button>
+                    </div>
+                    <div id="running-tasks" class="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        <!-- Tasks inject here -->
+                        <div class="flex flex-col items-center justify-center py-12 opacity-50">
+                            <svg class="w-16 h-16 mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            <p class="italic">No active services detected.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Launch Section -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold mb-8 flex items-center gap-3">
+                <span class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm">02</span>
+                Launch New Service
+            </h2>
+
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <!-- Interactive Wall System -->
+                <div class="lg:col-span-2 glass-card rounded-3xl p-8">
+                    <div class="flex items-start justify-between mb-8">
+                        <div>
+                            <span class="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-xs font-bold uppercase mb-3 inline-block">Production</span>
+                            <h3 class="text-2xl font-bold">Interactive Wall System</h3>
+                            <p class="text-slate-400 mt-2">The complete wall manager: handles modes, hand tracking, and route logic.</p>
+                        </div>
+                        <div class="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 21h6l-.75-4M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        </div>
+                    </div>
+
+                    <form id="interactive-wall-form" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-400 ml-1">Calibration Wall</label>
+                                <select name="wall_id" class="w-full px-4 py-3 rounded-xl">
+                                    {% for wall in walls %}
+                                        <option value="{{ wall.id }}">{{ wall.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-400 ml-1">Route Loop Interval (s)</label>
+                                <input type="number" name="loop_time" value="5.0" step="0.5" class="w-full px-4 py-3 rounded-xl">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-400 ml-1">Input Source (WebSocket)</label>
+                                <input type="text" name="input_websocket_url" class="w-full px-4 py-3 rounded-xl" placeholder="Default: settings.WS_POSE_URL">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-sm font-semibold text-slate-400 ml-1">Output Relay (WebSocket)</label>
+                                <input type="text" name="output_websocket_url" class="w-full px-4 py-3 rounded-xl" placeholder="Default: settings.WS_HOLDS_URL">
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-6 pt-2">
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" name="debug" class="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500">
+                                <span class="text-sm group-hover:text-white transition-colors">Core Debug Logs</span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" name="debug_proximity" class="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500">
+                                <span class="text-sm group-hover:text-white transition-colors">Precision Proximity Debug</span>
+                            </label>
+                        </div>
+
+                        <div class="pt-4">
+                            <button type="submit" class="btn-premium w-full py-4 rounded-2xl font-bold text-white shadow-xl flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                Launch System Instance
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Web Socker Tracker (Original) -->
+                <div class="glass-card rounded-3xl p-8 flex flex-col">
+                    <div class="flex items-start justify-between mb-6">
+                        <div>
+                            <span class="px-3 py-1 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold uppercase mb-3 inline-block">Old / Legacy</span>
+                            <h3 class="text-xl font-bold">Pose Session Tracker</h3>
+                        </div>
+                        <div class="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-400">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 013 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>
+                        </div>
+                    </div>
+                    
+                    <form id="websocket-tracker-form" class="space-y-4 flex-grow">
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-slate-500 uppercase">Target Route</label>
+                            <select name="route_id" class="w-full px-4 py-2 text-sm rounded-xl">
+                                {% for route in routes %}
+                                    <option value="{{ route.id }}">{{ route.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1">
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Proximity</label>
+                                <input type="number" name="proximity_threshold" value="300.0" class="w-full px-3 py-2 text-sm rounded-lg">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Touch (s)</label>
+                                <input type="number" name="touch_duration" value="0.5" class="w-full px-3 py-2 text-sm rounded-lg">
+                            </div>
+                        </div>
+                        
+                        <div class="mt-auto pt-6">
+                            <button type="submit" class="w-full py-3 rounded-xl border border-amber-500/30 text-amber-500 font-bold hover:bg-amber-500/10 transition-all text-sm">
+                                Start Tracker
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Secondary Actions -->
+            <div class="mt-8 flex justify-center">
+                 <div class="glass flex p-1.5 rounded-2xl">
+                    <button class="px-6 py-2 rounded-xl text-sm font-medium hover:bg-white/5">View Documentation</button>
+                    <button class="px-6 py-2 rounded-xl text-sm font-medium hover:bg-white/5">System Logs</button>
+                    <button class="px-6 py-2 rounded-xl text-sm font-medium hover:bg-white/5">Advanced Settings</button>
+                 </div>
+            </div>
+        </div>
+
+        <!-- Task Status Feedback -->
+        <div id="status-feedback" class="fixed bottom-8 right-8 z-50 transform translate-y-24 opacity-0 transition-all duration-500">
+            <div class="glass-card rounded-2xl p-4 pr-6 flex items-center gap-4 bg-indigo-900/40 border-indigo-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                <div id="feedback-icon" class="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <div>
+                    <h4 id="feedback-title" class="font-bold text-sm">Task Started</h4>
+                    <p id="feedback-msg" class="text-xs text-slate-400">Monitoring process ID: <span class="font-mono">821-X</span></p>
+                </div>
+                <button onclick="hideFeedback()" class="ml-4 text-slate-500 hover:text-white">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Task Details Modal (Used when clicking a task) -->
+    <div id="task-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-6 sm:p-24 bg-black/80 backdrop-blur-sm">
+        <div class="glass w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl p-8 transform transition-all">
+             <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold">Service Details</h3>
+                <button onclick="closeTaskModal()" class="text-slate-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+             </div>
+             <div id="modal-content" class="space-y-4">
+                 <!-- Content Dynamic -->
+             </div>
+             <div class="mt-8 flex flex-col gap-3">
+                 <button id="modal-stop-btn" class="w-full py-4 rounded-xl bg-red-500/20 text-red-500 font-bold hover:bg-red-500/30 transition-all border border-red-500/30">
+                     Terminate Service
+                 </button>
+                 <button onclick="closeTaskModal()" class="w-full py-4 rounded-xl bg-white/5 font-bold hover:bg-white/10 transition-all">
+                     Dismiss
+                 </button>
+             </div>
         </div>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const interactiveWallForm = document.getElementById('interactive-wall-form');
     const websocketTrackerForm = document.getElementById('websocket-tracker-form');
-    const taskStatusDiv = document.getElementById('task-status');
-    const refreshBtn = document.getElementById('refresh-status');
-    const clearBtn = document.getElementById('clear-status');
     const refreshRunningTasksBtn = document.getElementById('refresh-running-tasks');
-    const killAllTasksBtn = document.getElementById('kill-all-tasks');
     const killAllTasksTopBtn = document.getElementById('kill-all-tasks-top');
     const resetHoldsBtn = document.getElementById('reset-holds');
-    let currentTaskId = null;
-    let statusInterval = null;
     
-    // Fetch running tasks on page load
+    // Auto-refresh tasks
     fetchRunningTasks();
-    
-    // Set up periodic refresh every second
-    setInterval(fetchRunningTasks, 1000);
-    
-    // Refresh running tasks
-    if (refreshRunningTasksBtn) {
-        refreshRunningTasksBtn.addEventListener('click', function() {
-            fetchRunningTasks();
-        });
-    }
-    
-    // Kill all tasks (both buttons)
-    function setupKillAllTasksHandler() {
-        const handler = function() {
-            if (confirm('Are you sure you want to kill all running tasks? This action cannot be undone.')) {
-                fetch('{% url "kill_all_tasks" %}', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        alert('All running tasks killed successfully!');
-                        fetchRunningTasks(); // Refresh the task list
-                    } else {
-                        alert('Error killing tasks: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error killing tasks:', error);
-                    alert('An error occurred while killing tasks.');
-                });
-            }
-        };
-        
-        // Attach to both buttons
-        if (killAllTasksBtn) {
-            killAllTasksBtn.addEventListener('click', handler);
-        }
-        if (killAllTasksTopBtn) {
-            killAllTasksTopBtn.addEventListener('click', handler);
-        }
-    }
-    
-    setupKillAllTasksHandler();
-    
-    // Reset holds button functionality
+    setInterval(fetchRunningTasks, 3000);
+
+    // --- Actions ---
+
     if (resetHoldsBtn) {
-        resetHoldsBtn.addEventListener('click', function() {
-            resetHolds();
+        resetHoldsBtn.addEventListener('click', async function() {
+            try {
+                const wsUrl = "{{ settings.WS_HOLDS_URL }}".replace("https","wss").replace("http","ws");
+                const socket = new WebSocket(wsUrl);
+                socket.onopen = () => {
+                    socket.send(JSON.stringify({type: "reset_holds"}));
+                    showFeedback('Success', 'Reset holds command sent.', 'green');
+                    setTimeout(() => socket.close(), 500);
+                };
+                socket.onerror = () => showFeedback('Error', 'WebSocket connection failed.', 'red');
+            } catch (e) {
+                showFeedback('Error', e.message, 'red');
+            }
         });
     }
-    
-    // WebSocket tracker form submission
+
+    if (killAllTasksTopBtn) {
+        killAllTasksTopBtn.addEventListener('click', function() {
+            if (confirm('Terminate all active services?')) {
+                performPost('{% url "kill_all_tasks" %}', {}, 'Global Shutdown', 'All services have been stopped.');
+            }
+        });
+    }
+
+    if (refreshRunningTasksBtn) {
+        refreshRunningTasksBtn.addEventListener('click', () => fetchRunningTasks());
+    }
+
+    // --- Task Launchers ---
+
+    if (interactiveWallForm) {
+        interactiveWallForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(interactiveWallForm);
+            performPost('{% url "trigger_interactive_wall_task" %}', formData, 'Initializing System', 'Starting interactive wall manager...');
+        });
+    }
+
     if (websocketTrackerForm) {
         websocketTrackerForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            
             const formData = new FormData(websocketTrackerForm);
-            
-            fetch('{% url "trigger_websocket_tracker_task" %}', {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    currentTaskId = data.task_id;
-                    showTaskStatus(data);
-                    startStatusPolling();
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred while starting WebSocket tracker task.');
-            });
+            performPost('{% url "trigger_websocket_tracker_task" %}', formData, 'Starting Tracker', 'Initializing pose session tracker...');
         });
     }
-    
-    function fetchRunningTasks() {
-        fetch('{% url "get_running_tasks" %}', {
-            method: 'GET',
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+
+    // --- Helper Functions ---
+
+    function performPost(url, data, successTitle, successMsg) {
+        let options = {
+            method: 'POST',
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        };
+        
+        if (data instanceof FormData) {
+            options.body = data;
+        } else {
+            options.body = JSON.stringify(data);
+            options.headers['Content-Type'] = 'application/json';
+        }
+
+        fetch(url, options)
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showFeedback(successTitle, successMsg, 'indigo');
+                fetchRunningTasks();
+            } else {
+                showFeedback('Launch Failed', data.message, 'red');
             }
         })
-        .then(response => response.json())
+        .catch(err => showFeedback('Network Error', err.message, 'red'));
+    }
+
+    function fetchRunningTasks() {
+        fetch('{% url "get_running_tasks" %}')
+        .then(res => res.json())
         .then(data => {
             displayRunningTasks(data.tasks);
+            updateStats(data.tasks);
         })
-        .catch(error => {
-            console.error('Error fetching running tasks:', error);
+        .catch(err => console.error('Monitor fail:', err));
+    }
+
+    function updateStats(tasks) {
+        document.getElementById('running-count').textContent = tasks.length;
+        if (tasks.length > 0) {
+            const maxUptime = Math.max(...tasks.map(t => t.elapsed_time || 0));
+            document.getElementById('uptime').textContent = `${(maxUptime / 60).toFixed(1)}m`;
+        } else {
+            document.getElementById('uptime').textContent = '0m';
+        }
+    }
+
+    window.stopTask = function(taskId) {
+        fetch('{% url "stop_task" %}', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ task_id: taskId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            showFeedback('Stopping', `Termination sequence sent for ${taskId}`, 'amber');
+            fetchRunningTasks();
         });
     }
-    
+
     function displayRunningTasks(tasks) {
-        const runningTasksDiv = document.getElementById('running-tasks');
-        
+        const container = document.getElementById('running-tasks');
         if (tasks.length === 0) {
-            runningTasksDiv.innerHTML = '<div class="text-gray-500 italic">No running tasks found. Start a task below to see it here.</div>';
-        } else {
-            let tasksHtml = '<div class="space-y-3">';
-            tasks.forEach(task => {
-                const startTime = new Date(task.start_time).toLocaleString();
-                const elapsed = task.elapsed_time ? `${task.elapsed_time.toFixed(1)}s` : 'Running...';
-                
-                tasksHtml += `
-                    <div class="border border-gray-200 rounded-lg p-4">
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
-                                <h3 class="text-lg font-medium text-gray-900">${task.task_name}</h3>
-                                <p class="text-sm text-gray-600">Task ID: ${task.task_id}</p>
-                            </div>
-                            <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                                task.status === 'SUCCESS' ? 'bg-green-100 text-green-800' :
-                                task.status === 'FAILURE' ? 'bg-red-100 text-red-800' :
-                                task.status === 'PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                                'bg-gray-100 text-gray-800'
-                            }">
-                                ${task.status}
-                            </span>
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 opacity-50">
+                    <svg class="w-16 h-16 mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <p class="italic">No active services detected.</p>
+                </div>`;
+            return;
+        }
+
+        let html = '';
+        tasks.forEach(task => {
+            const isInteractive = task.task_name.includes('interactive');
+            const color = isInteractive ? 'indigo' : 'amber';
+            const icon = isInteractive ? 
+                `<svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 21h6l-.75-4M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>` :
+                `<svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 013 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>`;
+
+            html += `
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between group hover:bg-white/[0.08] transition-all">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-xl bg-${color}-500/10 flex items-center justify-center">
+                            ${icon}
                         </div>
-                        <div class="text-sm text-gray-600">
-                            <p><strong>Started:</strong> ${startTime}</p>
-                            <p><strong>Elapsed:</strong> ${elapsed}</p>
-                            ${task.result && task.result.message ? `<p><strong>Message:</strong> ${task.result.message}</p>` : ''}
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h4 class="font-bold text-sm text-slate-200">${task.task_name}</h4>
+                                <span class="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[10px] font-bold uppercase tracking-wider">Active</span>
+                            </div>
+                            <p class="text-[10px] font-mono text-slate-500 mt-1">${task.task_id.substring(0, 16)}...</p>
                         </div>
                     </div>
-                `;
-            });
-            tasksHtml += '</div>';
-            runningTasksDiv.innerHTML = tasksHtml;
-        }
-    }
-    
-    // Refresh status button
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-            if (currentTaskId) {
-                fetchTaskStatus(currentTaskId);
-            }
+                    <div class="flex items-center gap-6">
+                        <div class="text-right">
+                            <span class="block text-xs font-bold text-slate-300">${task.elapsed_time ? Math.floor(task.elapsed_time) + 's' : '--'}</span>
+                            <span class="block text-[10px] text-slate-500 uppercase">Elapsed</span>
+                        </div>
+                        <button onclick="stopTask('${task.task_id}')" class="p-2.5 rounded-xl bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
         });
+        container.innerHTML = html;
     }
-    
-    // Clear status button
-    if (clearBtn) {
-        clearBtn.addEventListener('click', function() {
-            taskStatusDiv.classList.add('hidden');
-            currentTaskId = null;
-            stopStatusPolling();
-        });
-    }
-    
-    function showTaskStatus(data) {
-        taskStatusDiv.classList.remove('hidden');
-        document.getElementById('status-task-id').textContent = data.task_id || '';
-        document.getElementById('status-status').textContent = data.status || '';
-        document.getElementById('status-message').textContent = data.message || '';
+
+    // --- Feedback System ---
+
+    window.showFeedback = function(title, msg, colorCode) {
+        const feedback = document.getElementById('status-feedback');
+        const fTitle = document.getElementById('feedback-title');
+        const fMsg = document.getElementById('feedback-msg');
+        const fIcon = document.getElementById('feedback-icon');
+
+        fTitle.textContent = title;
+        fMsg.textContent = msg;
         
-        if (data.status === 'PROGRESS' && data.progress !== undefined) {
-            document.getElementById('progress-container').classList.remove('hidden');
-            document.getElementById('progress-text').textContent = `${data.progress}%`;
-            document.getElementById('progress-bar').style.width = `${data.progress}%`;
-        } else {
-            document.getElementById('progress-container').classList.add('hidden');
-        }
+        // Reset classes
+        fIcon.className = "w-10 h-10 rounded-full flex items-center justify-center text-white";
+        if (colorCode === 'red') fIcon.classList.add('bg-red-500');
+        else if (colorCode === 'green') fIcon.classList.add('bg-green-500');
+        else if (colorCode === 'amber') fIcon.classList.add('bg-amber-500');
+        else fIcon.classList.add('bg-indigo-500');
+
+        feedback.classList.remove('translate-y-24', 'opacity-0');
+        
+        // Auto hide
+        setTimeout(hideFeedback, 5000);
     }
-    
-    function fetchTaskStatus(taskId) {
-        fetch(`{% url "get_task_status" task_id="PLACEHOLDER" %}`.replace('PLACEHOLDER', taskId))
-        .then(response => response.json())
-        .then(data => {
-            showTaskStatus(data);
-            
-            // Stop polling if task is complete
-            if (data.status === 'SUCCESS' || data.status === 'FAILURE') {
-                stopStatusPolling();
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching task status:', error);
-        });
-    }
-    
-    function startStatusPolling() {
-        // Poll every 2 seconds
-        statusInterval = setInterval(() => {
-            if (currentTaskId) {
-                fetchTaskStatus(currentTaskId);
-            }
-        }, 2000);
-    }
-    
-    function stopStatusPolling() {
-        if (statusInterval) {
-            clearInterval(statusInterval);
-            statusInterval = null;
-        }
-    }
-    
-    function resetHolds() {
-        try {
-            // Create WebSocket connection to WS_HOLDS_URL
-            const wsUrl = "{{ settings.WS_HOLDS_URL }}";
-            const socket = new WebSocket(wsUrl);
-            
-            // Handle WebSocket connection open
-            socket.onopen = function(event) {
-                console.log('WebSocket connection established for reset holds');
-                
-                // Send reset_holds message
-                const message = {
-                    type: "reset_holds"
-                };
-                
-                socket.send(JSON.stringify(message));
-                console.log('Sent reset_holds message:', message);
-                
-                // Close connection after sending message
-                setTimeout(() => {
-                    socket.close();
-                }, 1000);
-            };
-            
-            // Handle WebSocket errors
-            socket.onerror = function(error) {
-                console.error('WebSocket error:', error);
-                alert('Error connecting to WebSocket. Please check if the WebSocket server is running.');
-            };
-            
-            // Handle WebSocket connection close
-            socket.onclose = function(event) {
-                console.log('WebSocket connection closed');
-                if (event.code !== 1000) {
-                    console.warn('WebSocket closed unexpectedly:', event.code, event.reason);
-                }
-            };
-            
-            // Show success message to user
-            alert('Reset holds message sent successfully!');
-            
-        } catch (error) {
-            console.error('Error sending reset holds message:', error);
-            alert('Error sending reset holds message: ' + error.message);
-        }
+
+    window.hideFeedback = function() {
+        const feedback = document.getElementById('status-feedback');
+        feedback.classList.add('translate-y-24', 'opacity-0');
     }
 });
 </script>

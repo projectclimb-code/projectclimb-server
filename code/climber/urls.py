@@ -12,7 +12,7 @@ from .views import (
     CameraView, video_feed, capture_frame, PoseRealtimeView, PoseSkeletonView, PoseSkeletonDualView, PhoneCameraView, WebSocketRelayTestView,
     SessionListView, SessionDetailView, SessionDeleteView, SessionReplayView,
     SessionRecordingViewSet, WallCalibrationViewSet,
-    TaskManagementView, trigger_fake_session_task, trigger_websocket_tracker_task, get_task_status, get_running_tasks,
+    TaskManagementView, trigger_fake_session_task, trigger_websocket_tracker_task, trigger_interactive_wall_task, stop_task, get_task_status, get_running_tasks,
     wall_upload_svg, wall_upload_image, wall_capture_camera_image,
     WallAnimationView, DemoView, api_upload_wall_image, kill_all_tasks, start_default_task, MockClimberView
 )
@@ -120,8 +120,10 @@ urlpatterns = [
     path('tasks/', TaskManagementView.as_view(), name='task_management'),
     path('tasks/trigger-fake-session/', trigger_fake_session_task, name='trigger_fake_session_task'),
     path('tasks/trigger-websocket-tracker/', trigger_websocket_tracker_task, name='trigger_websocket_tracker_task'),
+    path('tasks/trigger-interactive-wall/', trigger_interactive_wall_task, name='trigger_interactive_wall_task'),
     path('tasks/status/<str:task_id>/', get_task_status, name='get_task_status'),
     path('tasks/running/', get_running_tasks, name='get_running_tasks'),
+    path('tasks/stop/', stop_task, name='stop_task'),
     path('tasks/kill-all/', kill_all_tasks, name='kill_all_tasks'),
     path('tasks/start-default/', start_default_task, name='start_default_task'),
     
