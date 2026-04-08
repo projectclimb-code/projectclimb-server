@@ -455,7 +455,7 @@ def stop_celery_task(self, task_id):
 
 @shared_task(bind=True)
 def interactive_wall_system_task(self, wall_id, input_websocket_url=None, output_websocket_url=None, 
-                                loop_time=5.0, debug=False, debug_proximity=False):
+                                command_websocket_url=None, loop_time=5.0, debug=False, debug_proximity=False):
     """
     Celery task to run the Interactive Wall System (Draw/Easy/Medium/Hard mode manager).
     
@@ -463,6 +463,7 @@ def interactive_wall_system_task(self, wall_id, input_websocket_url=None, output
         wall_id: ID of wall to use
         input_websocket_url: WebSocket URL for receiving pose data
         output_websocket_url: WebSocket URL for sending state updates
+        command_websocket_url: WebSocket URL for receiving simulation commands
         loop_time: Seconds interval for difficulty route looping
         debug: Enable debug output
         debug_proximity: Debug output for closest hold/button distances
@@ -500,6 +501,7 @@ def interactive_wall_system_task(self, wall_id, input_websocket_url=None, output
             wall_id=wall_id,
             input_websocket_url=input_websocket_url,
             output_websocket_url=output_websocket_url,
+            command_websocket_url=command_websocket_url,
             loop_time=loop_time,
             debug=debug,
             debug_proximity=debug_proximity

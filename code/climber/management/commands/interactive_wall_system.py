@@ -450,10 +450,11 @@ def check_hold_intersections(position, precomputed_paths=None, buttons=None):
 
 
 class InteractiveWallCommandSystem:
-    def __init__(self, wall_id, input_websocket_url, output_websocket_url, loop_time, debug=False, debug_proximity=False):
+    def __init__(self, wall_id, input_websocket_url, output_websocket_url, command_websocket_url=None, loop_time=5.0, debug=False, debug_proximity=False):
         self.wall_id = wall_id
         self.input_websocket_url = input_websocket_url
         self.output_websocket_url = output_websocket_url
+        self.command_websocket_url = command_websocket_url
         self.loop_time = loop_time
         self.debug = debug
         self.debug_proximity = debug_proximity
@@ -471,6 +472,7 @@ class InteractiveWallCommandSystem:
         
         self.input_client = None
         self.output_client = None
+        self.command_client = None
         
         self.buttons = {} # btn_id -> btn_data from SVG
         
@@ -542,6 +544,11 @@ class InteractiveWallCommandSystem:
         
         self.input_client = InputWebSocketClient(self.input_websocket_url, self.handle_pose_data)
         self.output_client = OutputWebSocketClient(self.output_websocket_url)
+        
+        if self.command_websocket_url:
+            self.command_client = InputWebSocketClient(self.command_websocket_url, self.handle_command_data)
+            logger.info(f"Command listener configured for: {self.command_websocket_url}")
+            
         return True
 
     @database_sync_to_async
@@ -725,6 +732,50 @@ class InteractiveWallCommandSystem:
         except Exception as e:
             logger.error(f"Error handling data: {e}")
 
+    async def handle_command_data(self, data):
+        """
+        Handle simulation commands from the /ws/command/ listener.
+        Expected command structure:
+        {
+            "type": "simulate_button",
+            "index": 0, // 0: draw, 1: hard, 2: medium, 3: easy
+            "mode": "hard", // Optional, alternative to index
+            "step": 1   // 1: activate (2s hold), 2: loop/cycle (4s hold)
+        }
+        """
+        try:
+            if not isinstance(data, dict):
+                return
+            
+            if data.get('type') == 'simulate_button':
+                btn_id = None
+                step = data.get('step', 1)
+                timestamp = time.time()
+                
+                # Option 1: Simulate by index (0-3)
+                if 'index' in data:
+                    index = data['index']
+                    if 0 <= index < len(self.state.control_buttons):
+                        btn_id = self.state.control_buttons[index]
+                        logger.info(f"Simulating button press by index {index}: {btn_id}")
+                
+                # Option 2: Simulate by mode name
+                elif 'mode' in data:
+                    target_mode = data['mode']
+                    for bid, mode in self.state.button_to_mode.items():
+                        if mode == target_mode:
+                            btn_id = bid
+                            logger.info(f"Simulating button press by mode: {target_mode} -> {btn_id}")
+                            break
+                
+                if btn_id:
+                    await self._on_control_button_pressed(btn_id, timestamp, step=step)
+                else:
+                    logger.warning(f"Simulate command received but no button matched: {data}")
+                    
+        except Exception as e:
+            logger.error(f"Error handling command data: {e}")
+
     async def send_system_state(self):
         """Gather state and send to frontend"""
         self.last_state_send_time = time.time()
@@ -809,16 +860,24 @@ class InteractiveWallCommandSystem:
             return
         self.running = True
         logger.info("Started Interactive Wall System")
+        
+        tasks = [
+            self.input_client.start(),
+            self.output_client.start(),
+            self._periodic_state_sender()
+        ]
+        
+        if self.command_client:
+            tasks.append(self.command_client.start())
+            
         try:
-            await asyncio.gather(
-                self.input_client.start(),
-                self.output_client.start(),
-                self._periodic_state_sender()
-            )
+            await asyncio.gather(*tasks)
         finally:
             self.running = False
             self.input_client.stop()
             self.output_client.stop()
+            if self.command_client:
+                self.command_client.stop()
 
 
 class Command(BaseCommand):
@@ -828,6 +887,7 @@ class Command(BaseCommand):
         parser.add_argument('--wall-id', type=int, required=True, help='ID of wall')
         parser.add_argument('--input-websocket-url', type=str, required=True, help='ws://... for MediaPipe/ArUco')
         parser.add_argument('--output-websocket-url', type=str, required=True, help='ws://... for frontend display')
+        parser.add_argument('--command-websocket-url', type=str, help='ws://... for simulation commands')
         parser.add_argument('--loop-time', type=float, default=5.0, help='Seconds interval for difficulty route looping')
         parser.add_argument('--debug', action='store_true', help='Debug log')
         parser.add_argument('--debug-proximity', action='store_true', help='Debug output for closest hold and button distance')
@@ -841,6 +901,7 @@ class Command(BaseCommand):
             wall_id=options['wall_id'],
             input_websocket_url=options['input_websocket_url'],
             output_websocket_url=options['output_websocket_url'],
+            command_websocket_url=options.get('command_websocket_url'),
             loop_time=options['loop_time'],
             debug=options['debug'],
             debug_proximity=options['debug_proximity']

@@ -913,6 +913,7 @@ def trigger_interactive_wall_task(request):
         wall_id = request.POST.get('wall_id')
         input_websocket_url = request.POST.get('input_websocket_url')
         output_websocket_url = request.POST.get('output_websocket_url')
+        command_websocket_url = request.POST.get('command_websocket_url')
         loop_time = request.POST.get('loop_time')
         debug = request.POST.get('debug') == 'on'
         debug_proximity = request.POST.get('debug_proximity') == 'on'
@@ -933,6 +934,8 @@ def trigger_interactive_wall_task(request):
             task_kwargs['input_websocket_url'] = input_websocket_url
         if output_websocket_url:
             task_kwargs['output_websocket_url'] = output_websocket_url
+        if command_websocket_url:
+            task_kwargs['command_websocket_url'] = command_websocket_url
         if loop_time:
             task_kwargs['loop_time'] = float(loop_time)
         if debug:
