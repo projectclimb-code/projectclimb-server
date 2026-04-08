@@ -13,21 +13,7 @@
   <title>Pose Stream</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.min.js"></script>
-  <script>
-    var module = { exports: {} };
-    function require(name) {
-      if (name === './cv') return window.CV;
-      return null;
-    }
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/js-aruco/src/cv.js"></script>
-  <script>
-    window.CV = module.exports;
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/js-aruco/src/aruco.js"></script>
-  <script>
-    window.AR = module.exports;
-  </script>
+
 </head>
 <body class="bg-black text-gray-100 h-screen w-screen overflow-hidden flex flex-col font-sans select-none touch-none">
   
@@ -41,7 +27,7 @@
     <div class="flex items-center gap-3">
       <select id="modeSelect" class="bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-full px-4 py-1 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
         <option value="pose">Pose</option>
-        <option value="draw">ArUco</option>
+
         <option value="light">Light</option>
       </select>
       <button id="gearBtn" class="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors">
@@ -127,15 +113,7 @@
       <div id="detectionSettings" class="pt-4 border-t border-white/5">
         <label class="block text-xs font-bold uppercase text-white/40 mb-4 tracking-widest">Calibration</label>
         
-        <div id="arucoControls" class="space-y-4 hidden">
-          <div class="space-y-1">
-            <div class="flex justify-between text-xs font-medium mb-1">
-                <span>ArUco Sensitivity</span>
-                <span id="arucoSensDisplay" class="text-blue-400">5%</span>
-            </div>
-            <input id="arucoSensSlider" type="range" min="1" max="30" step="1" value="5" class="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500">
-          </div>
-        </div>
+
 
         <div id="lightControls" class="space-y-4 hidden">
           <div class="space-y-1">
@@ -182,12 +160,11 @@
   const disconnectBtn = document.getElementById('disconnectBtn');
   const modeSelect = document.getElementById('modeSelect');
   const detectionSettings = document.getElementById('detectionSettings');
-  const arucoControls = document.getElementById('arucoControls');
+
   const lightControls = document.getElementById('lightControls');
   const zoomRangeInput = document.getElementById('zoomRange');
   const poseRateSlider = document.getElementById('poseRateSlider');
-  const arucoSensSlider = document.getElementById('arucoSensSlider');
-  const arucoSensDisplay = document.getElementById('arucoSensDisplay');
+
   const lightThreshSlider = document.getElementById('lightThreshSlider');
   const lightThreshDisplay = document.getElementById('lightThreshDisplay');
   const zoomDisplay = document.getElementById('zoomVal');
@@ -205,10 +182,7 @@
 
   let ws;
   let lastPoseSentTime = 0;
-  let currentMode = 'pose'; // 'pose' or 'draw'
-  
-  // AR Detector
-  let arucoDetector = new AR.Detector();
+  let currentMode = 'pose'; // 'pose' or 'light'
 
   // Masking State
   let maskPoints = [];
@@ -228,7 +202,7 @@
   const savedCam = localStorage.getItem('cameraId');
   const savedZoom = localStorage.getItem('zoom') || 1;
   const savedPoseRate = localStorage.getItem('poseRate') || 0;
-  const savedArucoSens = localStorage.getItem('arucoSens') || 5;
+
   const savedLightThresh = localStorage.getItem('lightThresh') || 220;
   const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
 
@@ -239,10 +213,7 @@
     poseRateSlider.value = savedPoseRate;
     if (rateDisplay) rateDisplay.textContent = savedPoseRate + 's';
   }
-  if (arucoSensSlider) {
-    arucoSensSlider.value = savedArucoSens;
-    if (arucoSensDisplay) arucoSensDisplay.textContent = savedArucoSens + '%';
-  }
+
   if (lightThreshSlider) {
     lightThreshSlider.value = savedLightThresh;
     if (lightThreshDisplay) lightThreshDisplay.textContent = savedLightThresh;
@@ -306,14 +277,13 @@
   window.setView = setView; // Make globally accessible
 
   function setMode(mode, fromRemote = false) {
-    if (['pose', 'draw', 'light'].includes(mode)) {
+    if (['pose', 'light'].includes(mode)) {
       currentMode = mode;
       modeSelect.value = mode;
       console.log('Mode switched to:', mode);
       
       // Update UI visibility
       detectionSettings.classList.toggle('hidden', mode === 'pose');
-      arucoControls.classList.toggle('hidden', mode !== 'draw');
       lightControls.classList.toggle('hidden', mode !== 'light');
 
       // Send state to backend if changed locally
@@ -448,7 +418,6 @@
             type: 'state',
             mode: currentMode === 'light' ? 'draw' : currentMode, // Light is a client-side variation of 'draw'
             zoom: parseFloat(zoomRangeInput.value),
-            aruco_sensitivity: parseInt(arucoSensSlider.value),
             light_threshold: parseInt(lightThreshSlider.value),
             pose_rate: parseFloat(poseRateSlider.value)
         }));
@@ -468,11 +437,7 @@
         zoomDisplay.textContent = parseFloat(config.zoom).toFixed(1) + 'x';
         localStorage.setItem('zoom', config.zoom);
     }
-    if (config.aruco_sensitivity !== undefined) {
-        arucoSensSlider.value = config.aruco_sensitivity;
-        arucoSensDisplay.textContent = config.aruco_sensitivity + '%';
-        localStorage.setItem('arucoSens', config.aruco_sensitivity);
-    }
+
     if (config.light_threshold !== undefined) {
         lightThreshSlider.value = config.light_threshold;
         lightThreshDisplay.textContent = config.light_threshold;
@@ -542,19 +507,7 @@
     }
   }
 
-  function sendArUco(markers, width, height) {
-    if(ws && ws.readyState === WebSocket.OPEN){
-        const currentTime = Date.now();
-        ws.send(JSON.stringify({
-            type: 'pose',
-            timestamp: currentTime / 1000,
-            width,
-            height,
-            landmarks: [], 
-            aruco_markers: markers
-        }));
-    }
-  }
+
 
   function sendLight(points, width, height) {
     if(ws && ws.readyState === WebSocket.OPEN){
@@ -641,11 +594,7 @@
     localStorage.setItem('poseRate', poseRateSlider.value);
     sendState();
   };
-  arucoSensSlider.oninput = () => {
-    arucoSensDisplay.textContent = arucoSensSlider.value + '%';
-    localStorage.setItem('arucoSens', arucoSensSlider.value);
-    sendState();
-  };
+
   lightThreshSlider.oninput = () => {
     lightThreshDisplay.textContent = lightThreshSlider.value;
     localStorage.setItem('lightThresh', lightThreshSlider.value);
@@ -761,8 +710,7 @@
     try {
         if (currentMode === 'pose') {
             await pose.send({image: video});
-        } else if (currentMode === 'draw') {
-            processArUco();
+
         } else if (currentMode === 'light') {
             processBrightLight();
         }
@@ -784,95 +732,7 @@
   }
   requestAnimationFrame(foregroundLoop);
 
-  function processArUco() {
-    if (currentMode !== 'draw') return;
 
-    if (canvas.width === 0) return;
-
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    if (currentView === 'pose') {
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-    } else {
-        ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    }
-
-    // Always draw mask overlay
-    drawMaskOverlay();
-
-    try {
-        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
-        // Manual override of detect logic for sensitivity
-        CV.grayscale(imageData, arucoDetector.grey);
-        CV.adaptiveThreshold(arucoDetector.grey, arucoDetector.thres, 2, 7);
-        arucoDetector.contours = CV.findContours(arucoDetector.thres, arucoDetector.binary);
-        
-        // Apply sensitivity (arucoSensSlider value is internal perimeter rate %)
-        const minPerimeterRate = parseInt(arucoSensSlider.value) / 100;
-        const minSize = imageData.width * minPerimeterRate;
-        
-        arucoDetector.candidates = arucoDetector.findCandidates(arucoDetector.contours, minSize, 0.05, 5);
-        arucoDetector.candidates = arucoDetector.clockwiseCorners(arucoDetector.candidates);
-        arucoDetector.candidates = arucoDetector.notTooNear(arucoDetector.candidates, 10);
-        
-        let detectedMarkers = arucoDetector.findMarkers(arucoDetector.grey, arucoDetector.candidates, 49);
-        
-        let markerIds = [];
-        let markersToBroadcast = [];
-
-        if (detectedMarkers.length > 0) {
-            for (let i = 0; i < detectedMarkers.length; ++i) {
-                let marker = detectedMarkers[i];
-                let id = marker.id;
-                markerIds.push(id);
-                
-                let sumX = 0, sumY = 0;
-                for (let j = 0; j < 4; j++) {
-                    sumX += marker.corners[j].x;
-                    sumY += marker.corners[j].y;
-                }
-                const centerX = sumX / 4;
-                const centerY = sumY / 4;
-                const normX = centerX / canvas.width;
-                const normY = centerY / canvas.height;
-
-                // Filter: check if marker center is inside the mask
-                if (maskPoints.length >= 3 && !isPointInPolygon({ x: normX, y: normY }, maskPoints)) {
-                    continue;
-                }
-
-                markersToBroadcast.push({ id, x: normX, y: normY });
-
-                // Draw border around marker
-                ctx.beginPath();
-                ctx.moveTo(marker.corners[0].x, marker.corners[0].y);
-                for (let j = 1; j < 4; j++) {
-                    ctx.lineTo(marker.corners[j].x, marker.corners[j].y);
-                }
-                ctx.closePath();
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#FF00FF'; // Magenta
-                ctx.stroke();
-
-                // Draw center point
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
-                ctx.fillStyle = 'white';
-                ctx.fill();
-
-                ctx.font = "20px Arial";
-                ctx.fillStyle = "white";
-                ctx.fillText(id, centerX + 15, centerY);
-            }
-            
-            console.log(`Detected markers: ${markerIds.join(', ')}`);
-            sendArUco(markersToBroadcast, canvas.width, canvas.height);
-        }
-    } catch (e) {
-        console.error('ArUco detection error:', e);
-    }
-  }
 
   function processBrightLight() {
     if (currentMode !== 'light') return;
