@@ -76,7 +76,7 @@ class TouchTracker:
             # Here we hardcode 3.0s intervals for button cycling, 
             # though the Tracker could be made more generic.
             if touch_duration >= self.touch_duration:
-                intervals = int(touch_duration // self.touch_duration)
+                intervals = int(touch_duration // self.touch_duration) if self.touch_duration > 0.0 else 1
                 last_triggered = self.sent_events.get(hold_id, 0)
                 
                 if intervals > last_triggered:
@@ -478,10 +478,13 @@ class InteractiveWallCommandSystem:
         
         # We track hands fast (1.0s tolerance) to trigger buttons, Detection slow (0.5s tolerance) to lock in holds
         self.hand_tracker = TouchTracker(touch_duration=2.0, lost_tolerance=1.0, multi_trigger=True)
-        self.detection_tracker = TouchTracker(touch_duration=1.0, lost_tolerance=0.5, multi_trigger=False)
+        self.detection_tracker = TouchTracker(touch_duration=0.0, lost_tolerance=0.5, multi_trigger=False)
         
         self.last_palm_l_img = None
         self.last_palm_r_img = None
+        self.last_palm_l_svg = None
+        self.last_palm_r_svg = None
+        self.last_calibrated_landmarks = []
         
         self.state = InteractiveState(loop_time=loop_time)
         self.running = False
@@ -627,6 +630,7 @@ class InteractiveWallCommandSystem:
                 self.state.temporary_route_holds.add(hold_id)
                 logger.info(f"Added '{hold_id}' to draw route.")
             state_changed = True
+            break # Single hold enforcement: only process the first hold detected in this window
             
         if state_changed:
             await self.send_system_state()
@@ -641,7 +645,7 @@ class InteractiveWallCommandSystem:
             if not is_valid: return
             
             # Handle manual mode switch from phone
-            if 'mode' in data and data.get('type') == 'change_mode':
+            if 'mode' in data and data.get('type') in ['change_mode', 'state']:
                 new_mode = data['mode']
                 if new_mode in self.state.MODES:
                     if self.state.mode != new_mode:
@@ -658,7 +662,8 @@ class InteractiveWallCommandSystem:
             img_height = data.get('height', 100)
             
             # 1. Process Hands
-            left_hand, right_hand, _, _ = extract_hand_positions(data.get('landmarks', []))
+            landmarks = data.get('landmarks', [])
+            left_hand, right_hand, _, _ = extract_hand_positions(landmarks)
             
             if left_hand: self.last_palm_l_img = (left_hand[0], left_hand[1])
             else: self.last_palm_l_img = None
@@ -666,9 +671,15 @@ class InteractiveWallCommandSystem:
             if right_hand: self.last_palm_r_img = (right_hand[0], right_hand[1])
             else: self.last_palm_r_img = None
 
+            self.last_palm_l_svg = None
+            self.last_palm_r_svg = None
             touched_holds_hand = set()
-            for h in [left_hand, right_hand]:
+            
+            for i, h in enumerate([left_hand, right_hand]):
                 svg_pos = transform_to_svg_coordinates(h, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+                if i == 0: self.last_palm_l_svg = svg_pos
+                else: self.last_palm_r_svg = svg_pos
+                
                 if svg_pos:
                     holds, buttons = check_hold_intersections(svg_pos, self.precomputed_paths, self.buttons)
                     touched_holds_hand.update(holds)
@@ -676,6 +687,21 @@ class InteractiveWallCommandSystem:
             
             self.state.current_touched_holds = touched_holds_hand
             await self._handle_hand_touches(touched_holds_hand, timestamp)
+
+            # 2. Process Full Calibrated Pose
+            self.last_calibrated_landmarks = []
+            if landmarks:
+                for l in landmarks:
+                    pos = (l['x'], l['y'])
+                    svg_pos = transform_to_svg_coordinates(pos, self.calibration_utils, self.transform_matrix, self.svg_size, img_width, img_height, calibration_type=self.calibration.calibration_type)
+                    if svg_pos:
+                        self.last_calibrated_landmarks.append({
+                            'x': svg_pos[0],
+                            'y': svg_pos[1],
+                            'visibility': l.get('visibility', 1.0)
+                        })
+                    else:
+                        self.last_calibrated_landmarks.append(None)
             
             # 2. Process Detection Points (ArUco or Light) in draw mode
             touched_holds_detection = set()
@@ -712,7 +738,8 @@ class InteractiveWallCommandSystem:
                                 ]
                                 if distances:
                                     closest_id, min_dist = min(distances, key=lambda x: x[1])
-                                    hand_info += f"closest {closest_id} ({min_dist:.1f})"
+                                    h_id = f"hold_{closest_id}" if not str(closest_id).startswith(('hold_', 'btn_')) else closest_id
+                                    hand_info += f"closest {h_id} ({min_dist:.1f})"
                             
                             if btn0_center:
                                 btn_dist = np.sqrt((svg_pos[0]-btn0_center[0])**2 + (svg_pos[1]-btn0_center[1])**2)
@@ -786,7 +813,7 @@ class InteractiveWallCommandSystem:
         route_data = None
         
         if self.state.mode == 'draw':
-            active_holds = list(self.state.temporary_route_holds)
+            active_holds = [h if str(h).startswith(('hold_', 'btn_')) else f"hold_{h}" for h in self.state.temporary_route_holds]
             custom_text = f"DRAW MODE: {len(active_holds)} Holds"
             text = "Create your route"
             
@@ -801,10 +828,10 @@ class InteractiveWallCommandSystem:
                 def extract_from_list(h_list):
                     res = []
                     for h in h_list:
-                        if isinstance(h, dict) and 'id' in h:
-                            res.append(str(h['id']))
-                        else:
-                            res.append(str(h))
+                        h_id = str(h['id']) if isinstance(h, dict) and 'id' in h else str(h)
+                        if not h_id.startswith(('hold_', 'btn_')):
+                            h_id = f"hold_{h_id}"
+                        res.append(h_id)
                     return res
 
                 if isinstance(route.data, list):
@@ -831,11 +858,14 @@ class InteractiveWallCommandSystem:
             'active_holds': active_holds, # Legacy field for compatibility
             'route_holds': active_holds if self.state.mode in ['easy', 'medium', 'hard', 'draw'] else [],
             'route_data': route_data,
-            'touched_holds': list(self.state.current_touched_holds),
+            'touched_holds': [h if str(h).startswith(('hold_', 'btn_')) else f"hold_{h}" for h in self.state.current_touched_holds],
             'palms': {
                 'left_img': {'x': self.last_palm_l_img[0], 'y': self.last_palm_l_img[1]} if self.last_palm_l_img else None,
-                'right_img': {'x': self.last_palm_r_img[0], 'y': self.last_palm_r_img[1]} if self.last_palm_r_img else None
+                'right_img': {'x': self.last_palm_r_img[0], 'y': self.last_palm_r_img[1]} if self.last_palm_r_img else None,
+                'left_svg': {'x': self.last_palm_l_svg[0], 'y': self.last_palm_l_svg[1]} if self.last_palm_l_svg else None,
+                'right_svg': {'x': self.last_palm_r_svg[0], 'y': self.last_palm_r_svg[1]} if self.last_palm_r_svg else None
             },
+            'calibrated_landmarks': self.last_calibrated_landmarks,
             'route_name': route_name,
             'text': text,
             'custom_text': custom_text,

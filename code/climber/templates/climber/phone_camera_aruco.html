@@ -118,10 +118,10 @@
         <div id="lightControls" class="space-y-4 hidden">
           <div class="space-y-1">
             <div class="flex justify-between text-xs font-medium mb-1">
-                <span>Light Threshold</span>
-                <span id="lightThreshDisplay" class="text-blue-400">220</span>
+                <span>Change Threshold</span>
+                <span id="lightThreshDisplay" class="text-blue-400">30</span>
             </div>
-            <input id="lightThreshSlider" type="range" min="0" max="255" step="5" value="220" class="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500">
+            <input id="lightThreshSlider" type="range" min="5" max="100" step="5" value="30" class="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500">
           </div>
         </div>
 
@@ -183,6 +183,14 @@
   let ws;
   let lastPoseSentTime = 0;
   let currentMode = 'pose'; // 'pose' or 'light'
+  let isRecordingHold = false;
+  let recordingTimeout = null;
+  let bestPointInWindow = null;
+  let originalDotClass = '';
+  let lastSentLightPoint = null;
+  let referenceFrameData = null;  // Uint8Array of per-pixel max(r,g,b) from reference frame
+  let referenceWidth = 0;
+  let referenceHeight = 0;
 
   // Masking State
   let maskPoints = [];
@@ -203,7 +211,8 @@
   const savedZoom = localStorage.getItem('zoom') || 1;
   const savedPoseRate = localStorage.getItem('poseRate') || 0;
 
-  const savedLightThresh = localStorage.getItem('lightThresh') || 220;
+  let savedLightThresh = parseInt(localStorage.getItem('lightThresh') || '0');
+  if (savedLightThresh > 100) savedLightThresh = 30; // Reset old absolute-brightness value
   const autoReconnect = localStorage.getItem('autoReconnect') === 'true';
 
   // Safe UI Initialization
@@ -734,6 +743,28 @@
 
 
 
+  // Capture a reference frame (LED off) so we can detect what changes during recording
+  function captureReferenceFrame() {
+    if (canvas.width === 0 || video.readyState < 2) return false;
+    // Use a fresh draw of the video to avoid reading our own overlays
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = canvas.width;
+    tmpCanvas.height = canvas.height;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    tmpCtx.drawImage(video, 0, 0, tmpCanvas.width, tmpCanvas.height);
+    const imageData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+    const d = imageData.data;
+    referenceFrameData = new Uint8Array(tmpCanvas.width * tmpCanvas.height);
+    for (let i = 0; i < referenceFrameData.length; i++) {
+      const idx = i * 4;
+      referenceFrameData[i] = Math.max(d[idx], d[idx+1], d[idx+2]);
+    }
+    referenceWidth = tmpCanvas.width;
+    referenceHeight = tmpCanvas.height;
+    console.log('Reference frame captured', referenceWidth + 'x' + referenceHeight);
+    return true;
+  }
+
   function processBrightLight() {
     if (currentMode !== 'light') return;
     if (canvas.width === 0) return;
@@ -746,63 +777,120 @@
         ctx.drawImage(video,0,0,canvas.width,canvas.height);
     }
 
-    // Always draw mask overlay
     drawMaskOverlay();
 
-    try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        const threshold = parseInt(lightThreshSlider.value);
-        
-        let sumX = 0;
-        let sumY = 0;
-        let count = 0;
-        let maxBright = 0;
+    // Draw last confirmed point (magenta ring)
+    if (lastSentLightPoint) {
+        const lx = lastSentLightPoint.x * canvas.width;
+        const ly = lastSentLightPoint.y * canvas.height;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 25, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#FF00FF';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(lx, ly, 4, 0, 2 * Math.PI);
+        ctx.fillStyle = '#FF00FF';
+        ctx.fill();
+    }
 
-        // Iterate through pixels (step 2 for performance)
-        for (let y = 0; y < canvas.height; y += 2) {
-            for (let x = 0; x < canvas.width; x += 2) {
-                const i = (y * canvas.width + x) * 4;
-                const r = data[i];
-                const g = data[i+1];
-                const b = data[i+2];
-                
-                // Luminance calculation
-                const brightness = 0.299*r + 0.587*g + 0.114*b;
-                
-                if (brightness > threshold) {
-                    // Filter: check if pixel is in mask
-                    if (maskPoints.length >= 3 && !isPointInPolygon({ x: x / canvas.width, y: y / canvas.height }, maskPoints)) {
-                        continue;
+    try {
+        const threshold = parseInt(lightThreshSlider.value);
+
+        if (isRecordingHold && referenceFrameData &&
+            referenceWidth === canvas.width && referenceHeight === canvas.height) {
+
+            // --- DELTA DETECTION (recording window) ---
+            // Read raw video pixels through a temp canvas to avoid reading our overlay drawings
+            const tmpCanvas = document.createElement('canvas');
+            tmpCanvas.width = canvas.width;
+            tmpCanvas.height = canvas.height;
+            const tmpCtx = tmpCanvas.getContext('2d');
+            tmpCtx.drawImage(video, 0, 0, tmpCanvas.width, tmpCanvas.height);
+            const imageData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+            const data = imageData.data;
+
+            let bestDelta = 0;
+            let bestX = 0, bestY = 0;
+            let sumX = 0, sumY = 0, count = 0, totalDelta = 0;
+
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    const i = (y * canvas.width + x) * 4;
+                    const cur = Math.max(data[i], data[i+1], data[i+2]);
+                    const ref = referenceFrameData[y * canvas.width + x];
+                    const delta = cur - ref;
+
+                    if (delta > threshold) {
+                        if (maskPoints.length >= 3 && !isPointInPolygon({ x: x / canvas.width, y: y / canvas.height }, maskPoints)) continue;
+
+                        if (delta > bestDelta + 5) {
+                            // New brighter delta cluster - reset
+                            bestDelta = delta;
+                            bestX = x; bestY = y;
+                            sumX = x; sumY = y; count = 1; totalDelta = delta;
+                        } else if (delta >= bestDelta - 5) {
+                            if (delta > bestDelta) bestDelta = delta;
+                            sumX += x; sumY += y; count++; totalDelta += delta;
+                        }
                     }
-                    sumX += x;
-                    sumY += y;
-                    count++;
-                    if (brightness > maxBright) maxBright = brightness;
                 }
             }
-        }
 
-        if (count > 0) {
-            const centerX = sumX / count;
-            const centerY = sumY / count;
-            const normX = centerX / canvas.width;
-            const normY = centerY / canvas.height;
+            if (count > 0) {
+                const centerX = sumX / count;
+                const centerY = sumY / count;
+                const normX = centerX / canvas.width;
+                const normY = centerY / canvas.height;
 
-            // Draw detection feedback
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
-            ctx.strokeStyle = '#00FFFF'; // Cyan
-            ctx.lineWidth = 4;
-            ctx.stroke();
-            
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = 'white';
-            ctx.fill();
+                // Cyan circle = live delta detection
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+                ctx.strokeStyle = '#00FFFF';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#00FFFF';
+                ctx.fill();
+                ctx.fillStyle = '#00FFFF';
+                ctx.font = '11px monospace';
+                ctx.fillText('\u0394' + bestDelta.toFixed(0) + ' (' + count + 'px)', centerX + 12, centerY - 8);
 
-            sendLight([{ x: normX, y: normY, brightness: maxBright / 255 }], canvas.width, canvas.height);
-            console.log(`Light detected at: ${normX.toFixed(2)}, ${normY.toFixed(2)}`);
+                // Keep best detection in window
+                if (!bestPointInWindow || totalDelta > bestPointInWindow.clusterScore) {
+                    bestPointInWindow = {
+                        point: { x: normX, y: normY, brightness: bestDelta / 255 },
+                        clusterScore: totalDelta
+                    };
+                }
+            }
+
+        } else {
+            // --- LIVE PREVIEW (not recording): show absolute brightest spot as aim guide ---
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let maxB = 0, bx = 0, by = 0;
+            const step = 3;
+            for (let y = 0; y < canvas.height; y += step) {
+                for (let x = 0; x < canvas.width; x += step) {
+                    const i = (y * canvas.width + x) * 4;
+                    const b = Math.max(data[i], data[i+1], data[i+2]);
+                    if (b > maxB) {
+                        if (maskPoints.length >= 3 && !isPointInPolygon({ x: x / canvas.width, y: y / canvas.height }, maskPoints)) continue;
+                        maxB = b; bx = x; by = y;
+                    }
+                }
+            }
+            if (maxB > 80) {
+                ctx.beginPath();
+                ctx.arc(bx, by, 14, 0, 2 * Math.PI);
+                ctx.strokeStyle = 'rgba(0,255,255,0.25)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
         }
     } catch (e) {
         console.error('Light detection error:', e);
@@ -844,6 +932,51 @@
 
   if(autoReconnect) connectWS();
   
+  // Keyboard handling for 'r' trigger
+  // Workflow: r pressed (LED off) -> reference frame captured -> LED turns on at 400ms for 700ms
+  //           -> delta detection fires -> best point sent -> window closes at 1300ms
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'r') {
+      if (isRecordingHold) return;
+      console.log("'r' pressed - capturing reference, arming detection");
+
+      // Step 1: capture reference BEFORE arming so first frames see the delta
+      captureReferenceFrame();
+      bestPointInWindow = null;
+
+      if (recordingTimeout) clearTimeout(recordingTimeout);
+
+      // Small delay: let the system signal the LED to turn on before we start collecting
+      // Hardware LED turns on at ~400ms, stays on for 700ms (until ~1100ms).
+      setTimeout(() => {
+        isRecordingHold = true;
+
+        // Visual feedback
+        if (!originalDotClass) originalDotClass = statusDot.className;
+        statusDot.className = 'w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse';
+        setStatus('Recording Hold...', 'text-cyan-400');
+
+        // Window: 1000ms duration (ends at 1300ms total, safely covering the 400ms->1100ms flash)
+        recordingTimeout = setTimeout(() => {
+          isRecordingHold = false;
+          referenceFrameData = null; // Clear reference
+          console.log('Light detection disarmed');
+
+          if (bestPointInWindow) {
+              sendLight([bestPointInWindow.point], canvas.width, canvas.height);
+              lastSentLightPoint = { x: bestPointInWindow.point.x, y: bestPointInWindow.point.y };
+              console.log('Sent delta point:', bestPointInWindow.point.x.toFixed(3), bestPointInWindow.point.y.toFixed(3), 'score:', bestPointInWindow.clusterScore.toFixed(0));
+              statusDot.className = 'w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]';
+              setTimeout(() => { if (!isRecordingHold) statusDot.className = originalDotClass; }, 2000);
+          } else {
+              setStatus('No light detected', 'text-yellow-400');
+              statusDot.className = originalDotClass;
+          }
+        }, 1000);
+      }, 300); // 300ms delay: plenty of time for reference to be captured before LED turns on at 400ms
+    }
+  });
+
   // Set initial view state
   setView('both');
 </script>
