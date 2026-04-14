@@ -585,7 +585,8 @@ class InteractiveWallCommandSystem:
                 logger.info("Cleared temporary draw route.")
             else:
                 self.state.mode = 'draw'
-                logger.info("Entered DRAW mode.")
+                self.state.temporary_route_holds.clear()
+                logger.info("Entered DRAW mode (holds cleared).")
             await self.send_system_state()
             return
             
@@ -614,6 +615,15 @@ class InteractiveWallCommandSystem:
             self.detection_tracker.clear_all()
             return
             
+        # If light hits a control button, exit draw mode
+        hit_buttons = {h for h in touched_holds if h in self.state.control_buttons}
+        if hit_buttons:
+            logger.info("Button hit by light detection, exiting draw mode.")
+            self.state.mode = None
+            self.state.temporary_route_holds.clear()
+            await self.send_system_state()
+            return
+
         # Filter out control buttons from being selectable
         selectable_holds = {h for h in touched_holds if h not in self.state.control_buttons}
         self.detection_tracker.update_touches(selectable_holds, timestamp)
@@ -651,7 +661,9 @@ class InteractiveWallCommandSystem:
                     if self.state.mode != new_mode:
                         self.state.mode = new_mode
                         logger.info(f"Manual mode switch from phone: {new_mode}")
-                        if new_mode in ['easy', 'medium', 'hard']:
+                        if new_mode == 'draw':
+                            self.state.temporary_route_holds.clear()
+                        elif new_mode in ['easy', 'medium', 'hard']:
                             self.state.available_routes = await self.fetch_routes_by_difficulty(new_mode)
                             self.state.current_route_index = 0
                         await self.send_system_state()

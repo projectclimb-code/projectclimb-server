@@ -286,14 +286,21 @@
   window.setView = setView; // Make globally accessible
 
   function setMode(mode, fromRemote = false) {
-    if (['pose', 'light'].includes(mode)) {
-      currentMode = mode;
-      modeSelect.value = mode;
-      console.log('Mode switched to:', mode);
+    let targetMode = mode;
+    if (fromRemote) {
+        if (mode === 'draw') targetMode = 'light';
+        else if (['easy', 'medium', 'hard'].includes(mode)) targetMode = 'pose';
+        else if (mode === null || mode === undefined) targetMode = 'pose';
+    }
+
+    if (['pose', 'light'].includes(targetMode)) {
+      currentMode = targetMode;
+      modeSelect.value = targetMode;
+      console.log('Mode switched to:', targetMode);
       
       // Update UI visibility
-      detectionSettings.classList.toggle('hidden', mode === 'pose');
-      lightControls.classList.toggle('hidden', mode !== 'light');
+      detectionSettings.classList.toggle('hidden', targetMode === 'pose');
+      lightControls.classList.toggle('hidden', targetMode !== 'light');
 
       // Send state to backend if changed locally
       if (!fromRemote && ws && ws.readyState === WebSocket.OPEN) {
@@ -435,7 +442,7 @@
 
   function handleRemoteConfig(config) {
     console.log('Remote config received:', config);
-    if (config.mode) setMode(config.mode, true);
+    if (config.mode !== undefined) setMode(config.mode, true);
     
     if (config.zoom !== undefined) {
         zoomRangeInput.value = config.zoom;
@@ -484,7 +491,7 @@
           sendImageToApi(msg.wall_id);
         } else if (msg.type === 'config') {
           handleRemoteConfig(msg);
-        } else if (msg.mode) {
+        } else if (msg.mode !== undefined) {
           setMode(msg.mode, true);
         }
       } catch(e){ console.error(e); }
